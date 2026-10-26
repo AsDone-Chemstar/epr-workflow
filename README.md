@@ -1,5 +1,7 @@
 # EPR Workflow
 
+**简体中文** | [English](README.en.md)
+
 用于 **Bruker ELEXSYS E580 / Xepr** 导出的 CW-EPR 数据的 Python 分析工作流。
 
 当前版本：**0.1.1**。版本更新与历史版本说明见 [CHANGELOG.md](CHANGELOG.md)。
@@ -504,5 +506,6 @@ EPR workflow\
 ├── conftest.py
 ├── requirements.txt
 ├── CHANGELOG.md           # 版本更新公告
-└── README.md
+├── README.md              # 中文说明
+└── README.en.md           # English documentation
 ```
