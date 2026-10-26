@@ -1,0 +1,41 @@
+# Python 字节码与缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 测试 / 工具缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 构建产物
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 操作系统杂项
+Thumbs.db
+.DS_Store
+
+# 实验数据与生成结果（不上传）
+data/raw/
+data/reference/
+results/
+
+# 运行时生成的个人 GUI 配置
+config/
