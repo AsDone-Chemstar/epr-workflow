@@ -17,6 +17,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -27,7 +28,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -53,8 +56,37 @@ from epr_workflow.gui.i18n import (
     tr_text,
 )
 from epr_workflow.gui.mpl_canvas import MplCanvas
+from epr_workflow.gui.plot_editor_panel import (
+    TEXT_KEYS as PLOT_EDITOR_TEXT_KEYS,
+    PlotEditorPanel,
+)
+from epr_workflow.gui.plot_export_dialog import (
+    TEXT_KEYS as PLOT_EXPORT_TEXT_KEYS,
+    PlotExportDialog,
+)
 from epr_workflow.gui.preprocessing_panel import TEXT_KEYS, PreprocessingPanel
 from epr_workflow.plot_asc import PROJECT_ROOT
+from epr_workflow.plot_export import (
+    PlotExportSettings,
+    default_plot_path,
+    export_plot_png,
+)
+from epr_workflow.plot_settings import (
+    CURVE_KEYS,
+    PlotSettings,
+    PlotSettingsError,
+    PlotSettingsStore,
+    available_curve_keys,
+    build_curves,
+    curve_data_ranges,
+    default_curve_label_key,
+    default_settings as default_plot_settings,
+    default_title_key,
+    default_ylabel_key,
+    draw_spectrum,
+    reconcile_settings,
+    restore_default_visibility,
+)
 from epr_workflow.preprocessing import (
     BASELINE_OPERATION,
     INPUT_CURRENT,
@@ -93,6 +125,17 @@ TOOLBAR_TOOLTIP_KEYS = {
     "Save": "toolbar_save",
 }
 
+#: Stable plot-settings error codes -> translated GUI messages.
+PLOT_ERROR_KEYS = {
+    "plot_no_visible_curve": "plot_error_no_visible_curve",
+    "plot_unavailable_curve": "plot_error_unavailable_curve",
+    "plot_missing_curve": "plot_error_missing_curve",
+    "plot_export_size": "plot_error_export_size",
+    "plot_export_dpi": "plot_error_export_dpi",
+    "plot_axis_range": "plot_error_axis_range",
+    "plot_color": "plot_error_color",
+}
+
 
 def default_settings() -> QSettings | None:
     """Return QSettings backed by ``config/gui_settings.ini``.
@@ -129,6 +172,12 @@ class MainWindow(QMainWindow):
         self._session: PreprocessingSession | None = None
         self._preview_result: PreprocessingResult | None = None
         self._processed_outputs: dict[str, str] = {}
+        self._plot_store = PlotSettingsStore()
+        self._plot_settings: PlotSettings | None = None
+        self._plot_source: Path | None = None
+        self._plot_sha: str | None = None
+        self._plot_output: Path | None = None
+        self._plot_legend_default: bool | None = None
 
         self._build_ui()
         self._retranslate()
@@ -261,7 +310,34 @@ class MainWindow(QMainWindow):
         self.preprocessing_panel.parameters_changed.connect(
             self._on_parameters_changed
         )
-        layout.addWidget(self.preprocessing_panel)
+
+        preprocessing_tab = QWidget()
+        preprocessing_layout = QVBoxLayout(preprocessing_tab)
+        preprocessing_layout.setContentsMargins(0, 0, 0, 0)
+        preprocessing_layout.addWidget(self.preprocessing_panel)
+        preprocessing_layout.addStretch(1)
+
+        self.plot_editor_panel = PlotEditorPanel()
+        self.plot_editor_panel.settings_changed.connect(
+            self._on_plot_settings_changed
+        )
+        self.plot_editor_panel.reset_requested.connect(
+            self._on_plot_reset_requested
+        )
+        self.plot_editor_panel.restore_visibility_requested.connect(
+            self._on_restore_visibility_requested
+        )
+        self.plot_editor_panel.export_requested.connect(
+            self._on_plot_export_requested
+        )
+        plot_scroll = QScrollArea()
+        plot_scroll.setWidgetResizable(True)
+        plot_scroll.setWidget(self.plot_editor_panel)
+
+        self.left_tabs = QTabWidget()
+        self.left_tabs.addTab(preprocessing_tab, "")
+        self.left_tabs.addTab(plot_scroll, "")
+        layout.addWidget(self.left_tabs, stretch=2)
         return panel
 
     def _build_plot_panel(self) -> QWidget:
@@ -329,15 +405,24 @@ class MainWindow(QMainWindow):
         self.preprocessing_panel.set_texts(
             {key: self._t(key) for key in TEXT_KEYS}
         )
+        self.left_tabs.setTabText(0, self._t("plot_tab_preprocessing"))
+        self.left_tabs.setTabText(1, self._t("plot_tab_plot"))
+        self.plot_editor_panel.set_texts(
+            {key: self._t(key) for key in PLOT_EDITOR_TEXT_KEYS}
+        )
         self._retranslate_toolbar()
 
         self._render_sample_list()
         self._render_batch_summary()
         if self._current_view is not None:
             self._render_plot()
+            self._update_plot_editor()
+        else:
+            self.plot_editor_panel.clear()
         self._render_metadata()
         self._render_cursor()
         self._update_preprocessing_panel()
+        self._update_plot_editor_actions()
 
     def _retranslate_toolbar(self) -> None:
         """Translate the matplotlib toolbar tooltips (zoom, pan, save, ...)."""
@@ -753,6 +838,11 @@ class MainWindow(QMainWindow):
         self._placeholder_key = None
         self._preview_result = None
         self._processed_outputs = {}
+        self._plot_settings = None
+        self._plot_source = view.source.resolve()
+        self._plot_sha = view.sha256
+        self._plot_output = None
+        self._plot_legend_default = None
         try:
             self._session = self._store.session_for(view)
         except PreprocessingError:
@@ -792,132 +882,162 @@ class MainWindow(QMainWindow):
     def _refresh_display(self, *, clear_cursor: bool = True) -> None:
         if clear_cursor:
             self._cursor_point = None
+        self._plot_output = None
         self._render_plot()
+        self._update_plot_editor()
         self._render_metadata()
         self._render_cursor()
         self._update_preprocessing_panel()
+        self._update_plot_editor_actions()
+
+    # ----------------------------------------------------------- plot
+    def _sync_plot_settings(self) -> PlotSettings | None:
+        """Load/reconcile display settings for the selected sample only."""
+        view = self._current_view
+        if view is None:
+            return None
+        result = self._active_result()
+        source = view.source.resolve()
+        defaults = default_plot_settings(result)
+        if (
+            self._plot_settings is None
+            or self._plot_source != source
+            or self._plot_sha != view.sha256
+        ):
+            self._plot_settings = self._plot_store.settings_for(
+                view.source, view.sha256, result
+            )
+            self._plot_source = source
+            self._plot_sha = view.sha256
+        else:
+            # The processed default shows a legend; the raw default does not.
+            # Only follow the changing default when the user has not made an
+            # explicit choice that differs from the previous default.
+            if (
+                self._plot_legend_default is not None
+                and self._plot_settings.axis.legend_visible
+                == self._plot_legend_default
+            ):
+                self._plot_settings.axis.legend_visible = (
+                    defaults.axis.legend_visible
+                )
+            self._plot_settings = reconcile_settings(
+                self._plot_settings, defaults
+            )
+            self._plot_store.update(
+                view.source, view.sha256, self._plot_settings
+            )
+        self._plot_legend_default = defaults.axis.legend_visible
+        return self._plot_settings
+
+    def _plot_curve_labels(
+        self, result: PreprocessingResult | None
+    ) -> dict[str, str]:
+        return {
+            key: self._t(default_curve_label_key(key, result))
+            for key in CURVE_KEYS
+        }
+
+    def _resolved_plot_settings(
+        self,
+        settings: PlotSettings,
+        view: SpectrumView,
+        result: PreprocessingResult | None,
+    ) -> PlotSettings:
+        """Fill auto title/labels with the current language's defaults."""
+        resolved = settings.copy()
+        if resolved.axis.title is None:
+            resolved.axis.title = self._t(
+                default_title_key(result), sample=view.source.stem
+            )
+        if resolved.axis.xlabel is None:
+            resolved.axis.xlabel = self._t("plot_xlabel")
+        if resolved.axis.ylabel is None:
+            resolved.axis.ylabel = self._t(default_ylabel_key(result))
+        return resolved
+
+    def _build_plot_curves(
+        self, settings: PlotSettings
+    ) -> tuple[list, PlotSettings, PreprocessingResult | None] | None:
+        view = self._current_view
+        if view is None:
+            return None
+        result = self._active_result()
+        curves = build_curves(
+            view.data["field_G"].to_numpy(),
+            view.data["intensity"].to_numpy(),
+            result,
+            settings,
+            self._plot_curve_labels(result),
+        )
+        resolved = self._resolved_plot_settings(settings, view, result)
+        return curves, resolved, result
 
     def _render_plot(self) -> None:
         view = self._current_view
         if view is None:
             return
-        ax = self.canvas.axes
-        ax.clear()
-        field = view.data["field_G"].to_numpy()
-        result = self._active_result()
-        if result is None:
-            ax.plot(
-                field,
-                view.data["intensity"].to_numpy(),
-                color="#1f4e79",
-                linewidth=1.0,
-            )
-            ax.set_ylabel(self._t("plot_ylabel"))
-            ax.set_title(self._t("plot_title", sample=view.source.stem))
-            artists: list = [ax.xaxis.label, ax.yaxis.label, ax.title]
-        elif result.has_smoothing:
-            only_smoothing = set(result.operations) == {SAVGOL_OPERATION}
-            ax.plot(
-                field,
-                result.intensity_raw,
-                color="#8c8c8c",
-                linewidth=0.8,
-                linestyle="--",
-                label=self._t("plot_legend_raw"),
-            )
-            ax.plot(
-                field,
-                result.difference,
-                color="#c55a11",
-                linewidth=0.8,
-                linestyle=":",
-                label=self._t("plot_legend_difference"),
-            )
-            ax.plot(
-                field,
-                result.intensity_processed,
-                color="#1f4e79",
-                linewidth=1.0,
-                label=self._t(
-                    "plot_legend_smoothed"
-                    if only_smoothing
-                    else "plot_legend_processed"
-                ),
-            )
-            ax.set_ylabel(
-                self._t(
-                    "plot_ylabel_smoothed"
-                    if only_smoothing
-                    else "plot_ylabel_processed"
-                )
-            )
-            if result.is_preview:
-                title_key = (
-                    "plot_title_savgol_preview"
-                    if only_smoothing
-                    else "plot_title_processed_preview"
-                )
-            else:
-                title_key = (
-                    "plot_title_smoothed"
-                    if only_smoothing
-                    else "plot_title_processed"
-                )
-            ax.set_title(self._t(title_key, sample=view.source.stem))
-            legend = ax.legend(loc="best", fontsize=8, frameon=False)
-            artists = [
-                ax.xaxis.label,
-                ax.yaxis.label,
-                ax.title,
-                *legend.get_texts(),
-            ]
-        else:
-            ax.plot(
-                field,
-                result.intensity_raw,
-                color="#8c8c8c",
-                linewidth=0.8,
-                linestyle="--",
-                label=self._t("plot_legend_raw"),
-            )
-            ax.plot(
-                field,
-                result.removed_baseline,
-                color="#c55a11",
-                linewidth=0.8,
-                linestyle=":",
-                label=self._t("plot_legend_removed"),
-            )
-            ax.plot(
-                field,
-                result.intensity_processed,
-                color="#1f4e79",
-                linewidth=1.0,
-                label=self._t("plot_legend_corrected"),
-            )
-            ax.set_ylabel(self._t("plot_ylabel_corrected"))
-            title_key = (
-                "plot_title_preview"
-                if result.is_preview
-                else "plot_title_corrected"
-            )
-            ax.set_title(self._t(title_key, sample=view.source.stem))
-            legend = ax.legend(loc="best", fontsize=8, frameon=False)
-            artists = [
-                ax.xaxis.label,
-                ax.yaxis.label,
-                ax.title,
-                *legend.get_texts(),
-            ]
-        ax.set_xlabel(self._t("plot_xlabel"))
-        # Chinese labels need a CJK-capable font; matplotlib's default would
-        # draw empty boxes. Only display text is affected, never the data.
-        if self._language == "zh" and self.canvas.cjk_font:
-            for artist in artists:
-                artist.set_fontfamily(self.canvas.cjk_font)
-        ax.grid(True, which="major", color="#b0b0b0", alpha=0.35, linewidth=0.6)
-        self.canvas.figure.tight_layout()
+        settings = self._sync_plot_settings()
+        if settings is None:
+            return
+        built = self._build_plot_curves(settings)
+        if built is None:
+            return
+        curves, resolved, _result = built
+        # The same renderer is used for the PNG export, so the saved figure
+        # cannot silently differ from the live preview.
+        draw_spectrum(
+            self.canvas.axes,
+            curves,
+            resolved,
+            cjk_font=self.canvas.cjk_font,
+        )
         self.canvas.draw()
+
+    def _update_plot_editor(self) -> None:
+        view = self._current_view
+        if view is None:
+            self.plot_editor_panel.clear()
+            return
+        settings = self._sync_plot_settings()
+        if settings is None:
+            self.plot_editor_panel.clear()
+            return
+        result = self._active_result()
+        built = self._build_plot_curves(settings)
+        if built is None:
+            self.plot_editor_panel.clear()
+            return
+        curves, _resolved, _result = built
+        data_xlim, data_ylim = curve_data_ranges(curves, visible_only=False)
+        self.plot_editor_panel.set_context(
+            settings,
+            available_curve_keys(result),
+            self._plot_curve_labels(result),
+            default_title=self._t(
+                default_title_key(result), sample=view.source.stem
+            ),
+            default_xlabel=self._t("plot_xlabel"),
+            default_ylabel=self._t(default_ylabel_key(result)),
+            data_xlim=data_xlim,
+            data_ylim=data_ylim,
+        )
+        self.plot_editor_panel.set_status_text(self._plot_status_text())
+
+    def _plot_status_text(self) -> str:
+        if self._preview_result is not None:
+            return self._t("plot_status_preview")
+        if self._plot_output is not None:
+            return self._t("plot_status_exported", path=self._plot_output)
+        return ""
+
+    def _update_plot_editor_actions(self) -> None:
+        enabled = (
+            self._current_view is not None
+            and self._plot_settings is not None
+            and self._preview_result is None
+        )
+        self.plot_editor_panel.set_export_enabled(enabled)
 
     def _set_open_buttons(self, outputs: dict | None) -> None:
         outputs = outputs or {}
@@ -1034,6 +1154,141 @@ class MainWindow(QMainWindow):
             self._set_open_buttons(self._raw_outputs())
             self._refresh_display()
 
+    # ------------------------------------------------------- plot editor
+    def _on_plot_settings_changed(self) -> None:
+        view = self._current_view
+        settings = self.plot_editor_panel.settings()
+        if view is None or settings is None:
+            return
+        self._plot_settings = settings
+        self._plot_store.update(view.source, view.sha256, settings)
+        self._plot_output = None
+        self._render_plot()
+        self._update_plot_editor_actions()
+        self.plot_editor_panel.set_status_text(self._plot_status_text())
+
+    def _on_plot_reset_requested(self) -> None:
+        view = self._current_view
+        if view is None:
+            return
+        self._plot_settings = default_plot_settings(self._active_result())
+        self._plot_store.update(
+            view.source, view.sha256, self._plot_settings
+        )
+        self._plot_output = None
+        self._render_plot()
+        self._update_plot_editor()
+        self._update_plot_editor_actions()
+
+    def _on_restore_visibility_requested(self) -> None:
+        view = self._current_view
+        settings = self._sync_plot_settings()
+        if view is None or settings is None:
+            return
+        settings = restore_default_visibility(
+            settings, default_plot_settings(self._active_result())
+        )
+        self._plot_settings = settings
+        self._plot_store.update(view.source, view.sha256, settings)
+        self._plot_output = None
+        self._render_plot()
+        self._update_plot_editor()
+        self._update_plot_editor_actions()
+
+    def _on_plot_export_requested(self) -> None:
+        view = self._current_view
+        if view is None:
+            return
+        if self._preview_result is not None:
+            QMessageBox.warning(
+                self,
+                self._t("title_plot_export_unavailable"),
+                self._t("msg_plot_export_preview"),
+            )
+            return
+        settings = self._sync_plot_settings()
+        if settings is None:
+            return
+        dialog = PlotExportDialog(
+            self,
+            texts={key: self._t(key) for key in PLOT_EXPORT_TEXT_KEYS},
+            default_path=default_plot_path(
+                view.source.stem, self.output_base
+            ),
+            options=PlotExportSettings(),
+            overwrite=False,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._export_plot_to(
+            dialog.output_path(),
+            dialog.export_settings(),
+            overwrite=dialog.overwrite(),
+        )
+
+    def _export_plot_to(
+        self,
+        output_path: str | Path,
+        export_settings: PlotExportSettings | None,
+        *,
+        overwrite: bool = False,
+    ) -> Path | None:
+        """Render the current plot to PNG; return the path only on success."""
+        view = self._current_view
+        settings = self._sync_plot_settings()
+        if view is None or settings is None:
+            return None
+        built = self._build_plot_curves(settings)
+        if built is None:
+            return None
+        curves, resolved, result = built
+        try:
+            target = export_plot_png(
+                curves=curves,
+                settings=resolved,
+                available_keys=available_curve_keys(result),
+                output_path=output_path,
+                export_settings=export_settings,
+                source_path=view.source,
+                overwrite=overwrite,
+                cjk_font=self.canvas.cjk_font,
+            )
+        except FileExistsError as exc:
+            QMessageBox.warning(
+                self,
+                self._t("title_outputs_exist"),
+                self._t("msg_outputs_exist", error=exc),
+            )
+            return None
+        except PlotSettingsError as exc:
+            QMessageBox.warning(
+                self,
+                self._t("title_plot_export_failed"),
+                self._describe_plot_error(exc),
+            )
+            return None
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(
+                self,
+                self._t("title_plot_export_failed"),
+                self._t(
+                    "msg_error_detail",
+                    type=type(exc).__name__,
+                    error=exc,
+                ),
+            )
+            return None
+        self._plot_output = target
+        self._plot_store.update(view.source, view.sha256, settings)
+        self.plot_editor_panel.set_status_text(self._plot_status_text())
+        return target
+
+    def _describe_plot_error(self, exc: PlotSettingsError) -> str:
+        key = PLOT_ERROR_KEYS.get(exc.code)
+        if key is not None and has_text(key, self._language):
+            return self._t(key)
+        return f"{type(exc).__name__}: {exc}"
+
     def _on_export_requested(self) -> None:
         if (
             self._session is None
@@ -1147,11 +1402,17 @@ class MainWindow(QMainWindow):
         self._session = None
         self._preview_result = None
         self._processed_outputs = {}
+        self._plot_settings = None
+        self._plot_source = None
+        self._plot_sha = None
+        self._plot_output = None
+        self._plot_legend_default = None
         self.canvas.axes.clear()
         self.canvas.draw()
         self.metadata_text.setPlainText("")
         self._render_cursor()
         self._set_open_buttons(None)
+        self.plot_editor_panel.clear()
         self.preprocessing_panel.set_enabled(False)
         self.preprocessing_panel.set_status_text(self._t("prep_status_raw"))
         self.preprocessing_panel.set_action_states(

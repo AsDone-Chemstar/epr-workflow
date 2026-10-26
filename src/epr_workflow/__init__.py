@@ -69,4 +69,4 @@ __all__ = [
     "validate_savgol_spec",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

@@ -161,6 +161,80 @@ _ZH: dict[str, str] = {
         "光标：磁场 {field:.4f} G　强度 {intensity:.4f}（已处理）"
     ),
     "cursor_value_preview": "光标：磁场 {field:.4f} G　强度 {intensity:.4f}（预览）",
+    # Plot Editor
+    "plot_tab_preprocessing": "预处理",
+    "plot_tab_plot": "绘图",
+    "plot_curves_label": "曲线（勾选以显示）",
+    "plot_curve_style_group": "选中曲线的样式",
+    "plot_curve_name_label": "显示名称",
+    "plot_curve_color": "颜色",
+    "plot_curve_width": "线宽",
+    "plot_curve_linestyle": "线型",
+    "plot_axis_group": "坐标轴与图例",
+    "plot_title_label": "标题",
+    "plot_xlabel_label": "X 轴标签",
+    "plot_ylabel_label": "Y 轴标签",
+    "plot_x_range_label": "X 轴范围",
+    "plot_y_range_label": "Y 轴范围",
+    "plot_x_auto": "自动",
+    "plot_y_auto": "自动",
+    "plot_legend_visible": "显示图例",
+    "plot_legend_location": "图例位置",
+    "plot_font_group": "字体大小",
+    "plot_font_title": "标题",
+    "plot_font_axis": "轴标签",
+    "plot_font_tick": "刻度",
+    "plot_font_legend": "图例",
+    "plot_reset": "重置绘图设置",
+    "plot_restore_visibility": "恢复默认可见性",
+    "plot_export": "导出绘图…",
+    "plot_scope_note": (
+        "绘图设置只改变显示方式；不会修改原始数据、处理结果或预处理历史。"
+    ),
+    "plot_error_color": "颜色必须使用 #RRGGBB 格式。",
+    "plot_error_axis_range": "坐标轴范围必须是有限数值，且最小值小于最大值。",
+    "plot_error_no_visible_curve": "至少需要一条可见曲线才能导出绘图。",
+    "plot_error_unavailable_curve": (
+        "所选曲线当前不可用；请重新加载或调整预处理状态。"
+    ),
+    "plot_error_missing_curve": "绘图设置缺少当前可用曲线的参数。",
+    "plot_error_export_size": "图像宽度和高度必须在 0.5–100 英寸之间。",
+    "plot_error_export_dpi": "DPI 必须在 50–1200 之间。",
+    "plot_status_preview": (
+        "处于预处理预览：应用或取消预览后才能导出绘图。"
+    ),
+    "plot_status_exported": "绘图已导出：{path}",
+    "plot_export_dialog_title": "导出绘图 PNG",
+    "plot_export_width": "宽度（英寸）",
+    "plot_export_height": "高度（英寸）",
+    "plot_export_dpi": "DPI",
+    "plot_export_include_title": "包含标题",
+    "plot_export_include_legend": "包含图例",
+    "plot_export_path": "输出文件",
+    "plot_export_browse": "浏览…",
+    "plot_export_overwrite": "允许覆盖已有文件",
+    "plot_export_invalid_path": "输出路径必须是以 .png 结尾的文件。",
+    "plot_export_ok": "导出",
+    "title_plot_export_unavailable": "无法导出绘图",
+    "title_plot_export_failed": "绘图导出失败",
+    "msg_plot_export_preview": (
+        "当前显示的是未应用的预处理预览。请先应用或取消预览，再导出绘图。"
+    ),
+    "plot_legend_fitted_baseline": "拟合基线",
+    "plot_line_solid": "实线",
+    "plot_line_dashed": "虚线",
+    "plot_line_dotted": "点线",
+    "plot_line_dashdot": "点划线",
+    "plot_legend_best": "自动选择",
+    "plot_legend_upper_right": "右上",
+    "plot_legend_upper_left": "左上",
+    "plot_legend_lower_right": "右下",
+    "plot_legend_lower_left": "左下",
+    "plot_legend_center_right": "右侧居中",
+    "plot_legend_center_left": "左侧居中",
+    "plot_legend_upper_center": "上方居中",
+    "plot_legend_lower_center": "下方居中",
+    "plot_legend_center": "居中",
     # Preprocessing errors
     "prep_error_array": (
         "数据数组无效：field 与 intensity 必须是一维、等长、非空的数值数组。"
@@ -458,6 +532,92 @@ _EN: dict[str, str] = {
     "cursor_value_preview": (
         "Cursor: field {field:.4f} G   intensity {intensity:.4f} (preview)"
     ),
+    # Plot Editor
+    "plot_tab_preprocessing": "Preprocessing",
+    "plot_tab_plot": "Plot",
+    "plot_curves_label": "Curves (tick to show)",
+    "plot_curve_style_group": "Style of Selected Curve",
+    "plot_curve_name_label": "Display name",
+    "plot_curve_color": "Colour",
+    "plot_curve_width": "Line width",
+    "plot_curve_linestyle": "Line style",
+    "plot_axis_group": "Axes and Legend",
+    "plot_title_label": "Title",
+    "plot_xlabel_label": "X-axis label",
+    "plot_ylabel_label": "Y-axis label",
+    "plot_x_range_label": "X-axis range",
+    "plot_y_range_label": "Y-axis range",
+    "plot_x_auto": "Auto",
+    "plot_y_auto": "Auto",
+    "plot_legend_visible": "Show legend",
+    "plot_legend_location": "Legend location",
+    "plot_font_group": "Font Sizes",
+    "plot_font_title": "Title",
+    "plot_font_axis": "Axis labels",
+    "plot_font_tick": "Ticks",
+    "plot_font_legend": "Legend",
+    "plot_reset": "Reset Plot Settings",
+    "plot_restore_visibility": "Restore Default Visibility",
+    "plot_export": "Export Plot…",
+    "plot_scope_note": (
+        "Plot settings change display only; they never modify raw data, "
+        "processed data or the preprocessing history."
+    ),
+    "plot_error_color": "The colour must use the #RRGGBB format.",
+    "plot_error_axis_range": (
+        "Axis limits must be finite numbers with the minimum below the maximum."
+    ),
+    "plot_error_no_visible_curve": (
+        "At least one curve must be visible to export a plot."
+    ),
+    "plot_error_unavailable_curve": (
+        "The selected curve is not available; reload the sample or adjust "
+        "the preprocessing state."
+    ),
+    "plot_error_missing_curve": (
+        "The plot settings are missing a curve that is currently available."
+    ),
+    "plot_error_export_size": (
+        "Figure width and height must be between 0.5 and 100 inches."
+    ),
+    "plot_error_export_dpi": "DPI must be between 50 and 1200.",
+    "plot_status_preview": (
+        "Preprocessing preview is active; apply or cancel it before exporting "
+        "the plot."
+    ),
+    "plot_status_exported": "Plot exported: {path}",
+    "plot_export_dialog_title": "Export Plot PNG",
+    "plot_export_width": "Width (inches)",
+    "plot_export_height": "Height (inches)",
+    "plot_export_dpi": "DPI",
+    "plot_export_include_title": "Include title",
+    "plot_export_include_legend": "Include legend",
+    "plot_export_path": "Output file",
+    "plot_export_browse": "Browse…",
+    "plot_export_overwrite": "Allow overwriting an existing file",
+    "plot_export_invalid_path": "The output path must end with .png.",
+    "plot_export_ok": "Export",
+    "title_plot_export_unavailable": "Cannot Export Plot",
+    "title_plot_export_failed": "Plot Export Failed",
+    "msg_plot_export_preview": (
+        "The current plot shows an unapplied preprocessing preview. Apply or "
+        "cancel the preview before exporting the plot."
+    ),
+    "plot_legend_fitted_baseline": "Fitted baseline",
+    "plot_line_solid": "Solid",
+    "plot_line_dashed": "Dashed",
+    "plot_line_dotted": "Dotted",
+    "plot_line_dashdot": "Dash-dot",
+    "plot_legend_best": "Best",
+    "plot_legend_upper_right": "Upper right",
+    "plot_legend_upper_left": "Upper left",
+    "plot_legend_lower_right": "Lower right",
+    "plot_legend_lower_left": "Lower left",
+    "plot_legend_center_right": "Center right",
+    "plot_legend_center_left": "Center left",
+    "plot_legend_upper_center": "Upper center",
+    "plot_legend_lower_center": "Lower center",
+    "plot_legend_center": "Center",
     # Preprocessing errors
     "prep_error_array": (
         "Invalid data arrays: field and intensity must be one-dimensional, "
