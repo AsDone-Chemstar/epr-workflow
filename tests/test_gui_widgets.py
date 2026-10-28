@@ -129,8 +129,8 @@ def test_default_language_is_chinese(app: QApplication) -> None:
     window = MainWindow()
 
     assert window._language == "zh"
-    assert window.windowTitle() == "EPR Workflow — ASC 导入与绘图"
-    assert window.open_file_btn.text() == "打开单个 ASC 文件"
+    assert window.windowTitle() == "EPR Workflow — ASC / BES3T 导入与绘图"
+    assert window.open_file_btn.text() == "打开数据文件…"
     assert window.language_combo.currentData() == "zh"
     assert window.batch_summary_label.text() == "尚未批量处理"
 
@@ -143,8 +143,8 @@ def test_switch_to_english_updates_existing_widgets(app: QApplication) -> None:
 
     window._set_language("en")
 
-    assert window.windowTitle() == "EPR Workflow — ASC Import and Plotting"
-    assert window.open_file_btn.text() == "Open ASC File"
+    assert window.windowTitle() == "EPR Workflow — ASC / BES3T Import and Plotting"
+    assert window.open_file_btn.text() == "Open Dataset…"
     assert window.batch_btn.text() == "Batch Process Folder…"
     assert window.output_btn.text() == "Output Directory…"
     assert window.recursive_check.text() == "Include Subdirectories"
@@ -160,8 +160,8 @@ def test_switch_to_english_updates_existing_widgets(app: QApplication) -> None:
 
     window._set_language("zh")
 
-    assert window.windowTitle() == "EPR Workflow — ASC 导入与绘图"
-    assert window.open_file_btn.text() == "打开单个 ASC 文件"
+    assert window.windowTitle() == "EPR Workflow — ASC / BES3T 导入与绘图"
+    assert window.open_file_btn.text() == "打开数据文件…"
     assert window.language_combo.currentData() == "zh"
 
 
@@ -172,7 +172,7 @@ def test_combo_selection_drives_language_switch(app: QApplication) -> None:
     window.language_combo.setCurrentIndex(index)
 
     assert window._language == "en"
-    assert window.windowTitle() == "EPR Workflow — ASC Import and Plotting"
+    assert window.windowTitle() == "EPR Workflow — ASC / BES3T Import and Plotting"
 
 
 def test_switch_updates_metadata_and_plot_without_reload(
@@ -359,7 +359,7 @@ def test_file_dialog_uses_selected_language(
     window._set_language("en")
     window._choose_single_file()
 
-    assert captured["title"] == "Select ASC File"
+    assert captured["title"] == "Select an ASC or BES3T DSC File"
     assert captured["filter"].endswith("All Files (*.*)")
 
 
@@ -405,7 +405,7 @@ def test_language_preference_is_restored(
 
     assert second._language == "en"
     assert second.language_combo.currentData() == "en"
-    assert second.windowTitle() == "EPR Workflow — ASC Import and Plotting"
+    assert second.windowTitle() == "EPR Workflow — ASC / BES3T Import and Plotting"
 
 
 def test_invalid_saved_language_falls_back_to_chinese(
@@ -418,7 +418,7 @@ def test_invalid_saved_language_falls_back_to_chinese(
     window = MainWindow(settings=settings)
 
     assert window._language == "zh"
-    assert window.windowTitle() == "EPR Workflow — ASC 导入与绘图"
+    assert window.windowTitle() == "EPR Workflow — ASC / BES3T 导入与绘图"
 
 
 def test_window_without_settings_does_not_persist(app: QApplication) -> None:

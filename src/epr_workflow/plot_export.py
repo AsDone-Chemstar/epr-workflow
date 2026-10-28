@@ -2,8 +2,8 @@
 
 The exporter renders already-loaded arrays with the same
 :func:`epr_workflow.plot_settings.draw_spectrum` function used by the GUI
-canvas. It deliberately does not read the ASC file, rerun preprocessing, or
-write CSV/JSON scientific records.
+canvas. It deliberately does not read the source data files, rerun preprocessing,
+or write CSV/JSON scientific records.
 
 A temporary file in the target directory is written first and then atomically
 replaced, so a failed save cannot leave a truncated image in place of an
@@ -95,6 +95,7 @@ def export_plot_png(
     output_path: str | Path,
     export_settings: PlotExportSettings | None = None,
     source_path: str | Path,
+    source_paths: Iterable[str | Path] | None = None,
     overwrite: bool = False,
     cjk_font: str | None = None,
 ) -> Path:
@@ -102,6 +103,8 @@ def export_plot_png(
 
     The caller supplies already-loaded curve arrays and their labels. Nothing
     in this function reads the source file or runs a preprocessing algorithm.
+    Every path in *source_paths* (and *source_path*) is protected from being
+    overwritten; BES3T passes both the DSC and DTA files.
     """
     options = export_settings or PlotExportSettings()
     curve_list = list(curves)
@@ -117,7 +120,11 @@ def export_plot_png(
         )
 
     target = Path(output_path)
-    guard_output_paths(Path(source_path), {"figure": target})
+    protected = [Path(source_path)]
+    if source_paths is not None:
+        protected.extend(Path(path) for path in source_paths)
+    for protected_path in dict.fromkeys(path.resolve() for path in protected):
+        guard_output_paths(protected_path, {"figure": target})
     if target.exists() and not overwrite:
         raise FileExistsError(
             f"Output file already exists: {target}. "

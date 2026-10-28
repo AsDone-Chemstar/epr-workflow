@@ -214,6 +214,27 @@ def test_export_refuses_source_overwrite(tmp_path: Path) -> None:
     assert source.read_bytes() == before
 
 
+def test_export_protects_companion_source_paths(tmp_path: Path) -> None:
+    source = make_source(tmp_path)
+    companion = tmp_path / "sample.DTA"
+    companion.write_bytes(b"companion bytes")
+    before = companion.read_bytes()
+    settings = styled_settings()
+
+    with pytest.raises(ValueError):
+        export_plot_png(
+            curves=make_curves(settings),
+            settings=settings,
+            available_keys=[CURVE_RAW],
+            output_path=companion,
+            source_path=source,
+            source_paths=[source, companion],
+            overwrite=True,
+        )
+
+    assert companion.read_bytes() == before
+
+
 def test_export_refuses_data_raw_directory() -> None:
     raw_target = PROJECT_ROOT / "data" / "raw" / "_pytest_plot_never.png"
     assert not raw_target.exists()

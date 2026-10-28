@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import Any
 
 from epr_workflow.gui.i18n import DEFAULT_LANGUAGE, status_text
-from epr_workflow.plot_asc import ImportResult, batch_process_directory, read_asc
+from epr_workflow.plot_asc import (
+    ImportResult,
+    batch_process_directory,
+    read_dataset,
+)
 from epr_workflow.preprocessing import PreprocessingSession
 
 
@@ -35,18 +39,21 @@ class SpectrumView:
     signal_mean: float = 0.0
     signal_std: float = 0.0
     sha256: str = ""
+    source_format: str = "ASC"
+    source_files: dict[str, str] = field(default_factory=dict)
+    source_hashes: dict[str, str] = field(default_factory=dict)
     import_result: ImportResult | None = None
 
 
 def load_spectrum(path: str | Path) -> SpectrumView:
-    """Read one ASC file for display, returning a :class:`SpectrumView`.
+    """Read one supported dataset for display, returning a :class:`SpectrumView`.
 
-    This is read-only: it never writes outputs and never modifies the source
-    file. Raises the same errors as :func:`read_asc` (``FileNotFoundError``,
-    ``AscFormatError``, ``AscDataError``).
+    ``.ASC`` and BES3T ``.DSC`` entry points are dispatched by
+    :func:`epr_workflow.plot_asc.read_dataset`. This is read-only: it never
+    writes outputs and never modifies source files.
     """
     path = Path(path)
-    result = read_asc(path)
+    result = read_dataset(path)
     data = result.data
     field = data["field_G"].to_numpy()
     signal = data["intensity"].to_numpy()
@@ -63,6 +70,9 @@ def load_spectrum(path: str | Path) -> SpectrumView:
         signal_mean=float(signal.mean()),
         signal_std=float(signal.std(ddof=1)) if len(signal) > 1 else 0.0,
         sha256=result.sha256,
+        source_format=result.source_format,
+        source_files=dict(result.source_files),
+        source_hashes=dict(result.source_hashes),
         import_result=result,
     )
 

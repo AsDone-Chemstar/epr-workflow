@@ -1,7 +1,7 @@
 """User-controlled plot styling for already-loaded EPR spectra.
 
 This module is deliberately free of Qt and file-system dependencies. It
-describes **how** existing arrays are drawn; it never reads ASC files, never
+describes **how** existing arrays are drawn; it never reads source files, never
 runs baseline correction or smoothing, and never modifies the arrays it is
 given.
 

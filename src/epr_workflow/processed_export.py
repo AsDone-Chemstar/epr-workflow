@@ -2,8 +2,9 @@
 
 Processed results are written to **new** files whose suffix reflects the
 applied steps (``_baseline``, ``_smoothed`` or ``_baseline_smoothed``). The
-original raw ASC file and the original raw CSV/PNG/JSON exports are never
-modified, and output paths inside ``data/raw`` are refused.
+original raw source files (ASC, or BES3T DSC+DTA) and the original raw
+CSV/PNG/JSON exports are never modified, and output paths inside ``data/raw``
+are refused.
 
 Plotting deliberately does not call :func:`epr_workflow.plot_asc.plot_spectrum`:
 that function forces the global matplotlib backend to Agg when ``show=False``,
@@ -13,7 +14,6 @@ canvas is used instead, so exporting from the GUI cannot change its backend.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import platform
 from datetime import datetime, timezone
@@ -31,7 +31,9 @@ from epr_workflow.plot_asc import (
     DEFAULT_LINEWIDTH,
     ImportResult,
     build_metadata,
-    guard_output_paths,
+    combine_source_hashes,
+    guard_import_output_paths,
+    verify_source_integrity,
 )
 from epr_workflow.preprocessing import (
     BASELINE_OPERATION,
@@ -67,10 +69,6 @@ _DATA_KIND_SUFFIX = {
     "baseline_corrected_and_smoothed": "baseline_smoothed",
     "none": "processed",
 }
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _timestamp_utc() -> str:
@@ -161,9 +159,23 @@ def _title_for(stem: str, data_kind: str) -> str:
     return f"{stem} - {titles.get(data_kind, 'Processed CW-EPR Spectrum')}"
 
 
-def _processed_run_record(result: PreprocessingResult) -> dict[str, Any]:
+def _processed_run_record(
+    result: PreprocessingResult, import_result: ImportResult
+) -> dict[str, Any]:
     operations = result.operations
     data_kind = processing_data_kind(result.steps)
+    if import_result.source_format == "BES3T":
+        description = (
+            "Processed export: the listed preprocessing steps were applied to "
+            "an in-memory copy and written to new files. The raw BES3T .DSC/"
+            ".DTA pair and the original raw exports were not modified."
+        )
+    else:
+        description = (
+            "Processed export: the listed preprocessing steps were applied to "
+            "an in-memory copy and written to new files. The raw ASC file and "
+            "the original raw exports were not modified."
+        )
     return {
         "applied_in_this_run": {
             "smoothing": SAVGOL_OPERATION in operations,
@@ -178,24 +190,25 @@ def _processed_run_record(result: PreprocessingResult) -> dict[str, Any]:
             "dpi": DEFAULT_DPI,
             "line_width": DEFAULT_LINEWIDTH,
         },
-        "description": (
-            "Processed export: the listed preprocessing steps were applied to "
-            "an in-memory copy and written to new files. The raw ASC file and "
-            "the original raw exports were not modified."
-        ),
+        "description": description,
     }
 
 
-def _processed_assumptions(result: PreprocessingResult) -> list[str]:
+def _processed_assumptions(
+    import_result: ImportResult, result: PreprocessingResult
+) -> list[str]:
     operations = result.operations
-    assumptions = [
-        "The file is a whitespace-separated Xepr ASCII export with a header "
-        "containing 'index', 'Field [G]' and 'Intensity []'.",
-        "Column 1 is a row index and is not a physical quantity.",
-        "Column 2 is magnetic field in Gauss (G).",
-        "Column 3 intensity has no documented unit; values are reported in "
-        "original (arbitrary) units.",
-    ]
+    if import_result.source_format == "BES3T":
+        assumptions = list(import_result.format_assumptions)
+    else:
+        assumptions = [
+            "The file is a whitespace-separated Xepr ASCII export with a header "
+            "containing 'index', 'Field [G]' and 'Intensity []'.",
+            "Column 1 is a row index and is not a physical quantity.",
+            "Column 2 is magnetic field in Gauss (G).",
+            "Column 3 intensity has no documented unit; values are reported in "
+            "original (arbitrary) units.",
+        ]
     if BASELINE_OPERATION in operations:
         assumptions.extend(
             [
@@ -266,10 +279,18 @@ def export_processed(
         )
 
     expected_sha = import_result.sha256
-    actual_sha = _sha256(source)
-    if actual_sha != expected_sha:
+    source_unchanged, source_hashes_after = verify_source_integrity(
+        import_result
+    )
+    if not source_unchanged:
+        try:
+            actual_sha = combine_source_hashes(
+                import_result.source_format, source_hashes_after
+            )
+        except ValueError:
+            actual_sha = str(source_hashes_after)
         raise PreprocessingError(
-            "The source file changed after import (SHA-256 mismatch); "
+            "The source file(s) changed after import (SHA-256 mismatch); "
             "exporting processed results was refused.",
             code="source_changed",
             context={"expected": expected_sha, "actual": actual_sha},
@@ -296,11 +317,13 @@ def export_processed(
         "smoothed",
         "baseline_corrected_and_smoothed",
     )
-    columns = SMOOTHED_COLUMNS if has_smoothing else PROCESSED_COLUMNS
+    columns = list(SMOOTHED_COLUMNS if has_smoothing else PROCESSED_COLUMNS)
+    if import_result.source_format != "ASC":
+        columns.append("source_format")
     paths = resolve_processed_paths(
         import_result.source.stem, output_base, data_kind=data_kind
     )
-    guard_output_paths(source, paths)
+    guard_import_output_paths(import_result, paths)
 
     existing = [str(path) for path in paths.values() if path.exists()]
     if existing and not overwrite:
@@ -313,15 +336,16 @@ def export_processed(
     difference_column = (
         "difference_from_raw" if has_smoothing else "baseline_removed"
     )
-    frame = pd.DataFrame(
-        {
-            "index": import_result.data["index"].to_numpy(),
-            "field_G": field,
-            "intensity_raw": result.intensity_raw,
-            "intensity_corrected": result.intensity_processed,
-            difference_column: result.difference,
-        }
-    )[columns]
+    frame_data = {
+        "index": import_result.data["index"].to_numpy(),
+        "field_G": field,
+        "intensity_raw": result.intensity_raw,
+        "intensity_corrected": result.intensity_processed,
+        difference_column: result.difference,
+    }
+    if import_result.source_format != "ASC":
+        frame_data["source_format"] = import_result.source_format
+    frame = pd.DataFrame(frame_data)[columns]
 
     paths["csv"].parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(paths["csv"], index=False)
@@ -336,15 +360,18 @@ def export_processed(
         data_kind=data_kind,
     )
 
-    source_unchanged = bool(_sha256(source) == expected_sha)
+    source_unchanged, source_hashes_after = verify_source_integrity(
+        import_result
+    )
     outputs = {key: str(path.resolve()) for key, path in paths.items()}
     metadata = build_metadata(
         import_result,
         raw_file_unchanged=source_unchanged,
         outputs=outputs,
-        processing=_processed_run_record(result),
+        processing=_processed_run_record(result, import_result),
+        source_hashes_after=source_hashes_after,
     )
-    metadata["assumptions"] = _processed_assumptions(result)
+    metadata["assumptions"] = _processed_assumptions(import_result, result)
     metadata["data_kind"] = data_kind
     preprocessing_record = build_preprocessing_record(result)
     if not preprocessing_record["source_sha256"]:

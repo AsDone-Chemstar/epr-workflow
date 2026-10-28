@@ -4,13 +4,14 @@
 
 A Python analysis workflow for CW-EPR data exported from **Bruker ELEXSYS E580 / Xepr**.
 
-Current version: **0.1.1**. See [CHANGELOG.md](CHANGELOG.md) for release notes and
+Current version: **0.2.0**. See [CHANGELOG.md](CHANGELOG.md) for release notes and
 version history.
 
-Current scope: **import → validation → raw-spectrum plotting → export**,
-user-triggered **linear baseline correction** and **Savitzky–Golay smoothing**,
-plus an independent **Plot Editor**. Preprocessing operates only on in-memory
-copies, is never applied automatically, and never modifies the source ASC file.
+Current scope: **import → validation → raw-spectrum plotting → export**, with
+support for Xepr three-column ASCII `.ASC` files and native BES3T `.DSC`/`.DTA`
+pairs, plus user-triggered **linear baseline correction**, **Savitzky–Golay
+smoothing**, and an independent **Plot Editor**. Preprocessing operates only on
+in-memory copies, is never applied automatically, and never modifies raw data.
 The Plot Editor changes visualization settings only; it does not modify raw
 data, processed data, or preprocessing history. Normalization, interpolation,
 spike removal, automatic baseline detection, and global curve fitting are not
@@ -59,10 +60,12 @@ $env:PYTHONPATH = "src"
 
 GUI features:
 
-- Open a single ASC file and display its raw spectrum read-only (no output files
-  are written).
+- Open a single `.ASC` file or a BES3T `.DSC` descriptor and display its raw
+  spectrum read-only (no output files are written). The DTA is paired
+  automatically from the DSC and cannot be opened as an independent dataset.
 - Select a folder for batch processing; CSV / PNG / JSON files and a batch
-  summary are generated.
+  summary are generated. Batch discovery includes `.ASC` and `.DSC` entry
+  points and never treats `.DTA` as a separate dataset.
 - The sample list uses colors for success / success with warnings / failure;
   click a sample to view its spectrum.
 - The toolbar provides zoom, pan, and reset; hovering shows the magnetic field
@@ -85,9 +88,9 @@ GUI features:
   default.
 - The interface supports **live switching between Simplified Chinese and
   English** through the "Language" selector in the upper right. Switching
-  language does not re-read the ASC file, rerun batch processing, or clear the
-  loaded spectra, sample list, batch results, selected sample, or cursor
-  readout.
+  language does not re-read the source data file, rerun batch processing, or
+  clear the loaded spectra, sample list, batch results, selected sample, or
+  cursor readout.
 - The language choice is stored in `config\gui_settings.ini` (only the language
   code is saved; nothing is written to the registry). It is restored on restart;
   Simplified Chinese is the default when no setting exists.
@@ -109,7 +112,14 @@ cd "D:\EPR workflow"
 
 # Process a specified file and show it immediately
 .\.venv\Scripts\python.exe src\epr_workflow\plot_asc.py "data\raw\BSA5P5T10.ASC" --show
+
+# Process a native BES3T dataset: the entry point is the .DSC, not the .DTA
+.\.venv\Scripts\python.exe src\epr_workflow\plot_asc.py "path\to\sample.DSC"
 ```
+
+For BES3T, the `.DSC` and `.DTA` must share the same filename stem in the same
+directory; extension matching is case-insensitive. A `.DTA` is only a companion
+and cannot be opened as independent data.
 
 The module form is also available (set `PYTHONPATH` first):
 
@@ -123,7 +133,8 @@ $env:PYTHONPATH = "src"
 ```powershell
 cd "D:\EPR workflow"
 
-# Process all .ASC files under data\raw (subdirectories are not searched)
+# Process all .ASC and .DSC entry points under data\raw
+# (subdirectories are not searched; .DTA is never treated as a dataset)
 .\.venv\Scripts\python.exe src\epr_workflow\plot_asc.py --input-dir data\raw --output-dir results
 
 # Write to a new directory to avoid touching existing results
@@ -138,8 +149,9 @@ cd "D:\EPR workflow"
 
 Batch-mode rules:
 
-- Only files with the `.asc` extension are processed; the extension is
-  **case-insensitive**.
+- Only `.asc` and `.dsc` entry files are processed; matching is
+  **case-insensitive**. A `.dta` is a BES3T companion and is never treated as
+  an independent dataset.
 - Subdirectories are not searched by default; add `--recursive` when needed.
 - Processing order is deterministic (relative paths sorted case-insensitively),
   so repeated runs are consistent.
@@ -154,8 +166,8 @@ Batch-mode rules:
 
 | Option | Description |
 | --- | --- |
-| `input` | Single-file mode: input `.ASC` path; defaults to `data\raw\BSA3T275.ASC` |
-| `--input-dir PATH` | Batch mode: process `.ASC` files in this directory |
+| `input` | Single-file mode: `.ASC` path or BES3T `.DSC` descriptor; defaults to `data\raw\BSA3T275.ASC` |
+| `--input-dir PATH` | Batch mode: process `.ASC` and `.DSC` entry points in this directory (`.DTA` is excluded) |
 | `--output-dir PATH` | Output root, defaults to `results` (batch outputs go into its figures/tables/logs subdirectories) |
 | `--recursive` | Search subdirectories in batch mode (disabled by default) |
 | `--overwrite` | Allow existing output files to be replaced (rejected by default) |
@@ -171,11 +183,13 @@ are available only in single-file mode.
 
 ### 3.4 Preprocessing (linear baseline correction / Savitzky–Golay smoothing, GUI only)
 
-Processing is performed only on in-memory copies. The original ASC file and any
-already-exported raw results are never modified. No baseline window is selected
-by default, and smoothing is not enabled automatically.
+Processing is performed only on in-memory copies. The original source files
+(ASC or BES3T DSC/DTA) and any already-exported raw results are never modified.
+No baseline window is selected by default, and smoothing is not enabled
+automatically.
 
-1. Open a single ASC file, or run batch processing and select a sample.
+1. Open a single supported data file (ASC or BES3T DSC), or run batch processing
+   and select a sample.
 2. In the "Preprocessing" panel under "Method", choose:
    - **Linear baseline correction**: enter two closed windows (in G). The four
      input fields start empty; without them, preview and apply are unavailable.
@@ -284,7 +298,7 @@ Operating rules:
   when switching samples. If the source file's SHA-256 changes, that sample's old
   settings are invalidated. Settings are not retained after the program closes.
 - Switching language updates automatic titles/labels and default legend names,
-  but does not re-read the ASC file or rerun correction or smoothing. Custom text
+  but does not re-read the source data file or rerun correction or smoothing. Custom text
   and styles are preserved.
 - Export is disabled while preprocessing is in an **unapplied preview** state, so
   a temporary preview cannot be mistaken for a final result.
@@ -434,10 +448,38 @@ The filename suffix depends on the processing actually applied:
   export dialog; defaults are `8 × 5 in` and `300 dpi`.
 - This file is a **display output**, not a new scientific data record. It does not
   create or modify CSV/JSON files.
-- Export does not change the original ASC file, already-exported `_raw` results,
-  or the current session's preprocessing history.
+- Export does not change the original source files, already-exported `_raw`
+  results, or the current session's preprocessing history.
 
-## 5. Supported ASC format assumptions
+### 4.6 BES3T import output
+
+- Raw-output naming is the same as for ASC: `<sample>_raw.csv`,
+  `<sample>_raw.png`, and `<sample>_metadata.json`, where `<sample>` is the
+  `.DSC` filename stem.
+- BES3T raw CSV appends a constant `source_format` column (`BES3T`) after the
+  historical three columns. ASC CSV remains
+  `index, field_G, intensity` without that column.
+- BES3T processed CSV also appends `source_format=BES3T`; raw intensity
+  remains `intensity_raw`, and processed intensity is `intensity_corrected`.
+- JSON adds:
+  - `source_format`: `BES3T`;
+  - `source_files`: role, absolute path, filename, before/after SHA-256, size,
+    and unchanged flag for the DSC and DTA;
+  - `sha256_definition`: definition of the combined hash;
+  - `file_size_bytes_definition`: total size of both source files;
+  - `format_metadata`: raw descriptor text, `#DESC`/`#SPL`/`#DSL` records,
+    parsed and inferred parameters, axis definition, binary type/byte order,
+    and diagnostics;
+  - `assumptions`: BES3T-specific assumptions.
+- `sha256` is the SHA-256 of `BES3T:<dsc-sha256>:<dta-sha256>`, not the hash of
+  either file alone. A change to either source file fails provenance
+  verification.
+- `data/raw` write protection, source-overwrite protection, processed-output
+  protection, and Plot Editor export protection apply to both DSC and DTA.
+
+## 5. Supported data formats and assumptions
+
+### 5.1 Xepr ASCII `.ASC`
 
 1. Plain text, whitespace-separated (spaces/tabs), **three columns**.
 2. The header row contains the keywords `index`, `Field [G]`, and `Intensity []`
@@ -457,6 +499,59 @@ The filename suffix depends on the processing actually applied:
 9. Savitzky–Golay smoothing assumes that the signal in a local window can be
    approximated by a low-order polynomial. Smoothing changes peak height, peak
    width, and line shape; it does not necessarily improve data quality.
+
+### 5.2 Bruker BES3T `.DSC` + `.DTA`
+
+This release supports **one-dimensional, real-valued** BES3T datasets only.
+
+1. Use the `.DSC` descriptor as the entry point. A same-stem `.DTA`
+   (case-insensitive) must exist in the same directory; a `.DTA` cannot be
+   opened independently.
+2. The `#DESC` layer must contain verifiable values for:
+   - `BSEQ`: `BIG` or `LIT`; no unverified default byte order is used.
+   - `IKKF`: one `REAL` only; `CPLX` and multiple values are rejected.
+   - `IRFMT`: one of `C`/`S`/`I`/`F`/`D`
+     (int8/int16/int32/float32/float64).
+   - `XTYP`: `IDX` only; `IGD` external axes and `NTUP` are unsupported.
+   - `XPTS`: positive integer and at least 3.
+   - `XMIN`, `XWID`: finite, with `XWID` nonzero.
+   - `XUNI`: `G` (Gauss) only; no mT or other unit conversion is applied.
+3. If `YPTS`/`ZPTS` are absent, BES3T's documented dimension default of 1 is
+   used and recorded in `inferred_parameters`. A value greater than 1, or a
+   `YTYP`/`ZTYP` other than `NODATA`, is rejected as multidimensional.
+4. The linear axis is `linspace(XMIN, XMIN + XWID, XPTS)`, with **both
+   endpoints included**. The step is therefore `XWID / (XPTS - 1)`, not
+   `XWID / XPTS`.
+5. The DTA payload is decoded from `IRFMT` and `BSEQ` and its size is checked
+   exactly. Fewer bytes are reported as truncation; extra bytes are reported
+   as trailing data. Nothing is silently padded or truncated.
+6. Original point order is preserved. No sorting, interpolation, scaling,
+   smoothing, or baseline correction is performed.
+7. The raw descriptor text, all `#DESC`/`#SPL`/`#DSL` records, parsed values,
+   inferred values, source SHA-256 hashes, and file sizes are recorded in JSON.
+8. Real integer formats are represented as float64 in the common data model;
+   their numerical values are unchanged, and this is recorded in assumptions.
+
+Unsupported: complex data, multidimensional data, `IGD` axes, `NTUP` axes,
+non-Gauss axis units, multiple values per point, missing required metadata,
+truncated payloads, and trailing bytes. These cases raise explicit errors
+rather than being guessed into a spectrum.
+
+`Test data\BSA3mal1h.DSC`/`.DTA` is a local validation sample and is not
+uploaded with the repository.
+
+Validation of that real sample in this release:
+
+- `XPTS=1024`; the DTA is 8192 bytes, consistent with 1024 × 8 bytes.
+- `IRFMT=D` and `BSEQ=BIG`, decoded as big-endian float64.
+- `XMIN=3310` and `XWID=100` produce a 3310–3410 G axis with 1024 points.
+- The first three intensities are `-76, -69, -67`; the last is `-84`, matching
+  the raw binary payload.
+- DSC and DTA SHA-256 hashes are unchanged before and after import.
+
+No matching Xepr ASCII export was available, so **point-by-point cross-format
+comparison is still pending**. A successful plot alone is not sufficient
+evidence that decoding is correct.
 
 ## 6. Validation rules
 
@@ -486,11 +581,29 @@ The filename suffix depends on the processing actually applied:
   `0 ≤ polyorder < window_length`, and all input values must be finite.
 - Smoothing does not change the number of points, the field axis, or the row
   order. It does not rescale, normalize, or remove points.
+- BES3T DSC/DTA pairing requires a case-insensitive filename-stem match; a
+  same-named but mismatched DTA is never paired automatically.
+- Missing, duplicate, or malformed required BES3T metadata is rejected; no
+  silent defaults are substituted.
+- The BES3T DTA size must equal `XPTS × bytes-per-point`; truncation and
+  trailing bytes are rejected.
+- The BES3T axis must be strictly monotonic after construction from
+  `XMIN`/`XWID`/`XPTS`; it is never sorted, reversed, or replaced.
+- A non-finite BES3T intensity rejects the whole dataset; individual points are
+  not deleted.
+- DSC and DTA SHA-256 hashes are recomputed after import; a change to either
+  source invalidates provenance.
 
 ## 7. Current limitations
 
-- Only the three-column Xepr ASCII format described above is supported; Bruker
-  binary formats such as DSC / DTA / PAR are not parsed.
+- Only the three-column Xepr ASCII `.ASC` format and the explicitly limited
+  one-dimensional real BES3T `.DSC`/`.DTA` layout are supported. PAR/SPC,
+  two-/three-dimensional BES3T, complex data, `IGD` external axis files, and
+  `NTUP` axes are not parsed.
+- BES3T axis units currently accept only `G`; no automatic mT-to-G or other
+  unit conversion is applied.
+- A BES3T `DSRC` other than `EXP` produces a warning, but the program does not
+  treat that field alone as proof of scientific validity.
 - Xepr acquisition parameters (microwave frequency, power, modulation amplitude,
   time constant, etc.) are not read, so no unverified experimental conditions are
   annotated on the plots.
@@ -610,13 +723,26 @@ the fitted baseline hidden by default and evaluated from recorded parameters
 (without refitting), visibility/name/color/line width/line style, titles and empty
 labels, automatic/manual ranges and invalid-range errors, legend location, font
 sizes, reset and restore-default-visibility, per-sample save/restore, language
-switching without re-reading ASC or reprocessing, export disabled during an
-unapplied preview, error when no curve is visible, default path and overwrite
+switching without re-reading source data or reprocessing, export disabled during
+an unapplied preview, error when no curve is visible, default path and overwrite
 protection, exported image size/DPI, title/legend options, unchanged source hash,
 and no modification of existing CSV/JSON.
 
+BES3T tests cover valid one-dimensional real data, point counts and
+point-by-point values, big-/little-endian float64/float32/integer formats, the
+axis formula and endpoints, single-file/batch/CLI/GUI/processed-export
+integration, DTA exclusion from dataset discovery, missing DSC/DTA, extension
+case, missing/duplicate/invalid required metadata, complex and multidimensional
+data, IGD/mT/A formats, zero width/too few points, truncation, trailing bytes,
+non-finite values, unchanged DSC and DTA hashes, and the real `BSA3mal1h`
+dataset (1024 points, 3310–3410 G, first/last values). The real-data test skips
+automatically when the local sample is absent.
+
 The Plot Editor pure logic and exporter also have separate tests. Invalid test
 inputs are written to temporary directories and do not touch experimental data.
+Current full-suite result: **298 passed, 1 skipped** (the skip is the
+case-ambiguity companion test that cannot be constructed on Windows; the real
+BES3T sample runs when present locally).
 
 ## 9. Directory structure
 
@@ -624,13 +750,15 @@ inputs are written to temporary directories and do not touch experimental data.
 EPR workflow\
 ├── .venv\
 ├── data\raw\            # raw experimental data (read-only)
+├── Test data\           # local BES3T validation sample (not uploaded)
 ├── results\figures\     # output figures
 ├── results\tables\      # output tables
 ├── results\logs\        # reports and batch summaries
 ├── 启动 EPR Workflow.bat  # double-click to start the GUI
 ├── src\epr_workflow\
 │   ├── __init__.py
-│   ├── plot_asc.py       # import / validation / plotting / export / batch
+│   ├── plot_asc.py       # ASC import / validation / plotting / export / batch
+│   ├── bes3t.py          # strict BES3T .DSC/.DTA reader (no Qt)
 │   ├── preprocessing.py  # baseline correction + Savitzky–Golay (NumPy/SciPy, no Qt)
 │   ├── plot_settings.py  # Plot Editor settings model and shared renderer (no Qt)
 │   ├── plot_export.py    # PNG plot export (standalone Agg figure, atomic write)
@@ -651,6 +779,7 @@ EPR workflow\
 ├── tests\
 │   ├── test_plot_asc.py
 │   ├── test_batch.py
+│   ├── test_bes3t.py
 │   ├── test_preprocessing.py
 │   ├── test_savgol.py
 │   ├── test_processed_export.py
@@ -660,6 +789,7 @@ EPR workflow\
 │   ├── test_gui_i18n.py
 │   ├── test_gui_preprocessing.py
 │   ├── test_gui_plot_editor.py
+│   ├── test_gui_bes3t.py
 │   └── test_gui_widgets.py
 ├── conftest.py
 ├── requirements.txt

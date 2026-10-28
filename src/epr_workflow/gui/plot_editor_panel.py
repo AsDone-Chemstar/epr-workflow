@@ -1,8 +1,8 @@
 """Qt panel for user-controlled plot styling.
 
 The panel is a view over :mod:`epr_workflow.plot_settings`. It never touches
-ASC files, preprocessing steps or scientific outputs: it only reports style
-changes through Qt signals.
+source data files, preprocessing steps or scientific outputs: it only reports
+style changes through Qt signals.
 """
 
 from __future__ import annotations

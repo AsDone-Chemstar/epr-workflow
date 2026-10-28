@@ -387,7 +387,7 @@ class MainWindow(QMainWindow):
         """
         self.setWindowTitle(self._t("window_title"))
 
-        self.open_file_btn.setText(self._t("open_asc"))
+        self.open_file_btn.setText(self._t("open_dataset"))
         self.batch_btn.setText(self._t("batch_process"))
         self.output_btn.setText(self._t("output_directory"))
         self.recursive_check.setText(self._t("recursive_subdirs"))
@@ -505,8 +505,16 @@ class MainWindow(QMainWindow):
         view = self._current_view
         if view is None:
             if self._error_state is not None:
+                state = dict(self._error_state)
+                code = state.get("code")
+                if isinstance(code, str):
+                    key = f"bes3t_error_{code}"
+                    if has_text(key, self._language):
+                        state["error"] = self._t(
+                            key, **state.get("context", {})
+                        )
                 self.metadata_text.setPlainText(
-                    self._t("metadata_read_error", **self._error_state)
+                    self._t("metadata_read_error", **state)
                 )
             elif self._placeholder_key is not None:
                 self.metadata_text.setPlainText(self._t(self._placeholder_key))
@@ -514,6 +522,7 @@ class MainWindow(QMainWindow):
 
         lines = [
             self._t("meta_file", path=view.source),
+            self._t("meta_format", format=view.source_format),
             self._t("meta_points", n=view.n_points),
             self._t("meta_field_range", low=view.field_min, high=view.field_max),
             self._t(
@@ -529,6 +538,48 @@ class MainWindow(QMainWindow):
             ),
             "",
         ]
+        result = view.import_result
+        if result is not None and result.source_format == "BES3T":
+            source_files = result.source_files
+            lines.insert(
+                2,
+                self._t(
+                    "meta_source_files",
+                    descriptor=Path(
+                        source_files.get("descriptor", str(view.source))
+                    ).name,
+                    data=Path(
+                        source_files.get("data", "?")
+                    ).name,
+                ),
+            )
+            axis = result.format_metadata.get("axis", {})
+            binary = result.format_metadata.get("binary", {})
+            if axis:
+                lines.insert(
+                    4,
+                    self._t(
+                        "meta_bes3t_axis",
+                        axis_type=axis.get("type", "?"),
+                        xmin=axis.get("XMIN", float("nan")),
+                        xwid=axis.get("XWID", float("nan")),
+                        unit=axis.get("unit", "?"),
+                    ),
+                )
+            if binary:
+                lines.insert(
+                    5,
+                    self._t(
+                        "meta_bes3t_data",
+                        ikkf=binary.get("IKKF", "?"),
+                        irfmt=binary.get("IRFMT", "?"),
+                        dtype=binary.get("numpy_dtype", "?"),
+                        byte_order=binary.get("byte_order", "?"),
+                        points=result.format_metadata.get("axis", {}).get(
+                            "points", view.n_points
+                        ),
+                    ),
+                )
         if view.warnings:
             lines.append(self._t("meta_warnings"))
             lines.append(self._t("meta_warnings_note"))
@@ -717,13 +768,30 @@ class MainWindow(QMainWindow):
             return self._t(key, **exc.context)
         return f"{type(exc).__name__}: {exc}"
 
+    def _describe_import_error(self, exc: Exception) -> str:
+        """Translate coded BES3T errors; preserve ASC diagnostics verbatim."""
+        code = getattr(exc, "code", None)
+        if isinstance(code, str):
+            key = f"bes3t_error_{code}"
+            if has_text(key, self._language):
+                return self._t(key, **getattr(exc, "context", {}))
+        return str(exc)
+
+    def _record_error_text(self, record: dict) -> str:
+        code = record.get("error_code")
+        if isinstance(code, str):
+            key = f"bes3t_error_{code}"
+            if has_text(key, self._language):
+                return self._t(key, **record.get("error_context", {}))
+        return str(record.get("error") or "")
+
     # ----------------------------------------------------------- handlers
     def _choose_single_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            self._t("dialog_select_asc"),
+            self._t("dialog_select_dataset"),
             str(PROJECT_ROOT / "data" / "raw"),
-            self._t("asc_filter"),
+            self._t("dataset_filter"),
         )
         if not path:
             return
@@ -785,7 +853,7 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem(self._sample_item_text(record, source))
             item.setForeground(QColor(STATUS_COLORS.get(record["status"], "#000000")))
             if record.get("error"):
-                item.setToolTip(record["error"])
+                item.setToolTip(self._record_error_text(record))
             self.sample_list.addItem(item)
         self.sample_list.blockSignals(False)
 
@@ -812,10 +880,13 @@ class MainWindow(QMainWindow):
             view = load_spectrum(path)
         except Exception as exc:  # surface a clear, non-crashing message
             self._clear_plot()
+            error_text = self._describe_import_error(exc)
             self._error_state = {
                 "path": path,
                 "type": type(exc).__name__,
-                "error": exc,
+                "error": str(exc),
+                "code": getattr(exc, "code", None),
+                "context": dict(getattr(exc, "context", {})),
             }
             self._render_metadata()
             QMessageBox.warning(
@@ -825,7 +896,7 @@ class MainWindow(QMainWindow):
                     "msg_read_failed",
                     name=path.name,
                     type=type(exc).__name__,
-                    error=exc,
+                    error=error_text,
                 ),
             )
             return
@@ -1250,6 +1321,7 @@ class MainWindow(QMainWindow):
                 output_path=output_path,
                 export_settings=export_settings,
                 source_path=view.source,
+                source_paths=list(view.source_files.values()),
                 overwrite=overwrite,
                 cjk_font=self.canvas.cjk_font,
             )

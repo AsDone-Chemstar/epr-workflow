@@ -61,7 +61,7 @@ class AscDataError(ValueError):
 
 @dataclass
 class ImportResult:
-    """Everything learned while reading one ASC file."""
+    """Everything learned while reading one supported dataset."""
 
     source: Path
     data: pd.DataFrame
@@ -76,6 +76,14 @@ class ImportResult:
     nonfinite_value_count: int = 0
     duplicate_field_count: int = 0
     index_continuity: str = "not checked"
+    #: Optional provenance used by format-specific loaders (currently BES3T).
+    #: ASC imports keep the historical behaviour and leave these at defaults.
+    source_format: str = "ASC"
+    source_files: dict[str, str] = field(default_factory=dict)
+    source_hashes: dict[str, str] = field(default_factory=dict)
+    sha256_definition: str = "SHA-256 of the source file bytes."
+    format_metadata: dict[str, Any] = field(default_factory=dict)
+    format_assumptions: list[str] = field(default_factory=list)
 
 
 def _is_finite_row(values: tuple[float, float, float]) -> bool:
@@ -271,6 +279,32 @@ def read_asc(path: str | Path, *, allow_non_monotonic: bool = False) -> ImportRe
     )
 
 
+def read_dataset(
+    path: str | Path, *, allow_non_monotonic: bool = False
+) -> ImportResult:
+    """Read one supported dataset and return a validated :class:`ImportResult`.
+
+    The entry point determines the format: ``.ASC`` uses :func:`read_asc`,
+    ``.DSC`` uses the BES3T loader, and ``.DTA`` is explicitly rejected because
+    it is a companion file, not an independent dataset. Extension matching is
+    case-insensitive.
+    """
+    path = Path(path)
+    suffix = path.suffix.casefold()
+    if suffix == ".dsc":
+        # Lazy import avoids a module cycle: the BES3T loader reuses
+        # ImportResult from this module.
+        from epr_workflow.bes3t import read_bes3t
+
+        return read_bes3t(path)
+    if suffix == ".dta":
+        raise ValueError(
+            f"{path.name} is a BES3T binary companion; open the matching "
+            ".DSC descriptor instead."
+        )
+    return read_asc(path, allow_non_monotonic=allow_non_monotonic)
+
+
 def _find_header(lines: list[str], path: Path) -> tuple[int, list[str]]:
     """Return ``(line_index, tokens)`` for the first recognisable header."""
     for line_index, line in enumerate(lines):
@@ -338,12 +372,14 @@ def build_metadata(
     raw_file_unchanged: bool,
     outputs: dict[str, str] | None = None,
     processing: dict[str, Any] | None = None,
+    source_hashes_after: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Assemble the JSON report for one import.
 
     ``outputs`` and ``processing`` describe the files produced and the
     configuration used *by the current run*; they make no claim about future
-    runs.
+    runs. BES3T imports add provenance blocks; ASC reports retain their
+    historical structure.
     """
     import matplotlib
 
@@ -351,7 +387,18 @@ def build_metadata(
     signal = data["intensity"].to_numpy()
     field = data["field_G"].to_numpy()
 
-    return {
+    asc_assumptions = [
+        "The file is a whitespace-separated Xepr ASCII export with a "
+        "header containing 'index', 'Field [G]' and 'Intensity []'.",
+        "Column 1 is a row index and is not a physical quantity.",
+        "Column 2 is magnetic field in Gauss (G).",
+        "Column 3 intensity has no documented unit; values are reported "
+        "in original (arbitrary) units.",
+        "No baseline correction, smoothing, normalisation, outlier removal "
+        "or curve fitting was applied.",
+    ]
+
+    metadata: dict[str, Any] = {
         "source_file": result.source.name,
         "source_path": str(result.source),
         "file_size_bytes": int(result.file_size_bytes),
@@ -390,18 +437,53 @@ def build_metadata(
         "rejected_row_details": result.rejected_rows[:MAX_REPORTED_ROWS],
         "rejected_row_details_truncated": len(result.rejected_rows) > MAX_REPORTED_ROWS,
         "validation_warnings": result.warnings,
-        "assumptions": [
-            "The file is a whitespace-separated Xepr ASCII export with a "
-            "header containing 'index', 'Field [G]' and 'Intensity []'.",
-            "Column 1 is a row index and is not a physical quantity.",
-            "Column 2 is magnetic field in Gauss (G).",
-            "Column 3 intensity has no documented unit; values are reported "
-            "in original (arbitrary) units.",
-            "No baseline correction, smoothing, normalisation, outlier removal "
-            "or curve fitting was applied.",
-        ],
+        "assumptions": asc_assumptions,
         "raw_file_unchanged": raw_file_unchanged,
     }
+
+    if result.source_format != "ASC":
+        metadata["source_format"] = result.source_format
+        metadata["sha256_definition"] = result.sha256_definition
+        metadata["file_size_bytes_definition"] = (
+            "Total bytes of all source files in the BES3T descriptor/data "
+            "pair."
+        )
+        metadata["source_files"] = _source_file_entries(
+            result, source_hashes_after
+        )
+        metadata["format_metadata"] = result.format_metadata
+        metadata["assumptions"] = list(result.format_assumptions)
+
+    return metadata
+
+
+def _source_file_entries(
+    result: ImportResult,
+    source_hashes_after: dict[str, str] | None,
+) -> list[dict[str, Any]]:
+    """Describe every source file with before/after hashes and sizes."""
+    entries: list[dict[str, Any]] = []
+    for role, path_text in result.source_files.items():
+        path = Path(path_text)
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = None
+        entry: dict[str, Any] = {
+            "role": role,
+            "path": str(path.resolve()),
+            "filename": path.name,
+            "sha256": result.source_hashes.get(role),
+            "size_bytes": size,
+        }
+        if source_hashes_after is not None:
+            after = source_hashes_after.get(role)
+            entry["sha256_after"] = after
+            entry["unchanged"] = bool(
+                after and result.source_hashes.get(role) == after
+            )
+        entries.append(entry)
+    return entries
 
 
 def plot_spectrum(
@@ -527,6 +609,101 @@ def guard_output_paths(input_path: Path, paths: dict[str, Path]) -> None:
     _guard_output_paths(input_path, paths)
 
 
+def combine_source_hashes(
+    source_format: str, source_hashes: dict[str, str]
+) -> str:
+    """Return the canonical combined hash for an imported dataset.
+
+    ASC files have one source file. BES3T datasets have a descriptor and a
+    binary data file; both hashes are combined in a documented, deterministic
+    order so that a change to either companion invalidates sessions and
+    processed exports.
+    """
+    if source_format == "BES3T":
+        try:
+            descriptor = source_hashes["descriptor"]
+            data = source_hashes["data"]
+        except KeyError as exc:
+            raise ValueError(
+                "BES3T provenance requires both descriptor and data hashes."
+            ) from exc
+        payload = (
+            b"BES3T:"
+            + descriptor.encode("ascii")
+            + b":"
+            + data.encode("ascii")
+        )
+        return hashlib.sha256(payload).hexdigest()
+    if "source" in source_hashes:
+        return source_hashes["source"]
+    if len(source_hashes) == 1:
+        return next(iter(source_hashes.values()))
+    raise ValueError("Cannot combine source hashes for an unknown format.")
+
+
+def verify_source_integrity(
+    result: ImportResult,
+) -> tuple[bool, dict[str, str]]:
+    """Re-hash every imported source file and compare it with the import.
+
+    Returns ``(unchanged, actual_hashes)``. Missing files yield an empty hash
+    for that role and therefore fail the comparison instead of raising.
+    """
+    files = dict(result.source_files)
+    if not files:
+        files = {"source": str(result.source)}
+    expected = dict(result.source_hashes)
+    if not expected and files == {"source": str(result.source)}:
+        expected = {"source": result.sha256}
+
+    actual: dict[str, str] = {}
+    for role, path in files.items():
+        try:
+            actual[role] = _sha256(Path(path))
+        except OSError:
+            actual[role] = ""
+
+    try:
+        combined = combine_source_hashes(result.source_format, actual)
+    except ValueError:
+        combined = ""
+    unchanged = bool(
+        actual == expected
+        and combined
+        and combined == result.sha256
+    )
+    return unchanged, actual
+
+
+def guard_import_output_paths(
+    result: ImportResult, paths: dict[str, Path]
+) -> None:
+    """Protect every source file of an import from being used as output."""
+    source_paths = [result.source]
+    source_paths.extend(Path(path) for path in result.source_files.values())
+    seen: set[Path] = set()
+    for source in source_paths:
+        resolved = source.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        guard_output_paths(source, paths)
+
+
+def raw_export_frame(result: ImportResult) -> pd.DataFrame:
+    """Return the raw CSV frame, adding format identity for BES3T only.
+
+    ASC CSV output remains the historical three-column frame
+    (``index, field_G, intensity``). BES3T output appends a constant
+    ``source_format`` column so a CSV file can be identified independently of
+    its filename and JSON companion.
+    """
+    frame = result.data.copy()
+    if result.source_format != "ASC":
+        frame["source_format"] = result.source_format
+    return frame
+
+
 def _empty_record(input_path: Path, stem: str) -> dict[str, Any]:
     """A per-file batch record with every field present."""
     return {
@@ -559,7 +736,7 @@ def _process_one(
     allow_non_monotonic: bool = False,
     show: bool = False,
 ) -> dict[str, Any]:
-    """Import, plot and export one ASC file, returning a status record.
+    """Import, plot and export one ASC/BES3T dataset, returning a record.
 
     Exceptions are converted into a ``failed`` record so that batch mode can
     continue with the remaining files.
@@ -579,16 +756,27 @@ def _process_one(
         return record
 
     try:
-        _guard_output_paths(input_path, paths)
-        record["source_sha256_before"] = _sha256(input_path)
-        result = read_asc(input_path, allow_non_monotonic=allow_non_monotonic)
+        result = read_dataset(
+            input_path, allow_non_monotonic=allow_non_monotonic
+        )
+        guard_import_output_paths(result, paths)
     except Exception as exc:  # per-file isolation: one bad file must not stop a batch
         record["error"] = f"{type(exc).__name__}: {exc}"
+        code = getattr(exc, "code", None)
+        if code:
+            record["error_code"] = code
+            record["error_context"] = dict(getattr(exc, "context", {}))
         return record
+
+    record["source_sha256_before"] = result.sha256
+    if result.source_format != "ASC":
+        record["source_format"] = result.source_format
+        record["source_files"] = dict(result.source_files)
+        record["source_hashes_before"] = dict(result.source_hashes)
 
     try:
         paths["csv"].parent.mkdir(parents=True, exist_ok=True)
-        result.data.to_csv(paths["csv"], index=False)
+        raw_export_frame(result).to_csv(paths["csv"], index=False)
         LOGGER.info("Data saved: %s (%d rows)", paths["csv"], len(result.data))
 
         plot_spectrum(
@@ -601,10 +789,16 @@ def _process_one(
             line_width=DEFAULT_LINEWIDTH,
         )
 
-        record["source_sha256_after"] = _sha256(input_path)
-        record["source_unchanged"] = (
-            record["source_sha256_after"] == result.sha256
-        )
+        unchanged, hashes_after = verify_source_integrity(result)
+        record["source_unchanged"] = unchanged
+        if result.source_format != "ASC":
+            record["source_hashes_after"] = hashes_after
+        try:
+            record["source_sha256_after"] = combine_source_hashes(
+                result.source_format, hashes_after
+            )
+        except ValueError:
+            record["source_sha256_after"] = None
         if not record["source_unchanged"]:
             LOGGER.error("Source file changed during processing: %s", input_path)
 
@@ -614,6 +808,7 @@ def _process_one(
             raw_file_unchanged=record["source_unchanged"],
             outputs=outputs,
             processing=_processing_record(),
+            source_hashes_after=hashes_after,
         )
         paths["metadata_json"].parent.mkdir(parents=True, exist_ok=True)
         paths["metadata_json"].write_text(
@@ -623,6 +818,10 @@ def _process_one(
         LOGGER.info("Metadata saved: %s", paths["metadata_json"])
     except Exception as exc:
         record["error"] = f"{type(exc).__name__}: {exc}"
+        code = getattr(exc, "code", None)
+        if code:
+            record["error_code"] = code
+            record["error_context"] = dict(getattr(exc, "context", {}))
         record["validation_warnings"] = list(result.warnings)
         record["outputs"] = {
             key: str(path.resolve()) for key, path in paths.items() if path.exists()
@@ -663,6 +862,34 @@ def discover_asc_files(input_dir: str | Path, *, recursive: bool = False) -> lis
         path
         for path in iterator
         if path.is_file() and path.suffix.lower() == ".asc"
+    ]
+
+    def sort_key(path: Path) -> tuple[str, str]:
+        relative = path.relative_to(input_dir).as_posix()
+        return relative.casefold(), relative
+
+    return sorted(files, key=sort_key)
+
+
+def discover_dataset_files(
+    input_dir: str | Path, *, recursive: bool = False
+) -> list[Path]:
+    """Return ``.ASC`` and ``.DSC`` entry points in deterministic order.
+
+    ``.DTA`` files are intentionally excluded: they are BES3T companions and
+    must never be treated as independent datasets.
+    """
+    input_dir = Path(input_dir)
+    if not input_dir.exists():
+        raise FileNotFoundError(f"Input directory does not exist: {input_dir}")
+    if not input_dir.is_dir():
+        raise NotADirectoryError(f"Input path is not a directory: {input_dir}")
+
+    iterator = input_dir.rglob("*") if recursive else input_dir.glob("*")
+    files = [
+        path
+        for path in iterator
+        if path.is_file() and path.suffix.casefold() in {".asc", ".dsc"}
     ]
 
     def sort_key(path: Path) -> tuple[str, str]:
@@ -754,7 +981,7 @@ def _print_batch_record(index: int, total: int, record: dict[str, Any]) -> None:
 
 
 def run_single(args: argparse.Namespace) -> int:
-    """Process one ASC file (the original single-file mode)."""
+    """Process one ASC file or one BES3T DSC entry point."""
     input_path = (
         Path(args.input)
         if args.input
@@ -808,8 +1035,9 @@ def batch_process_directory(
     overwrite: bool = False,
     allow_non_monotonic: bool = False,
 ) -> tuple[dict[str, Any], Path]:
-    """Discover and process every ASC file, returning ``(summary, path)``.
+    """Discover and process every ASC or BES3T DSC entry point.
 
+    ``.DTA`` companion files are never treated as independent datasets.
     Per-file failures, discovery problems and validation warnings are captured
     in the summary's ``errors`` and per-file records; they do not raise.
     Raises :class:`FileExistsError` when the batch summary already exists and
@@ -828,14 +1056,15 @@ def batch_process_directory(
 
     errors: list[str] = []
     try:
-        files = discover_asc_files(input_dir, recursive=recursive)
+        files = discover_dataset_files(input_dir, recursive=recursive)
     except (FileNotFoundError, NotADirectoryError) as exc:
         errors.append(str(exc))
         files = []
 
     if not errors and not files:
         errors.append(
-            f"No .ASC files found in {input_dir} (recursive={recursive})."
+            f"No .ASC files or .DSC datasets found in {input_dir} "
+            f"(recursive={recursive})."
         )
 
     # Detect output-basename collisions before writing anything.
@@ -880,7 +1109,7 @@ def batch_process_directory(
 
 
 def run_batch(args: argparse.Namespace) -> int:
-    """Process every ``.ASC`` file in ``--input-dir`` and write a summary."""
+    """Process every ``.ASC`` and ``.DSC`` entry point in ``--input-dir``."""
     input_dir = Path(args.input_dir)
     output_base = (
         Path(args.output_dir) if args.output_dir else PROJECT_ROOT / "results"
@@ -921,21 +1150,25 @@ def main(argv: list[str] | None = None) -> int:
     """Command-line entry point. Returns a process exit code."""
     parser = argparse.ArgumentParser(
         description=(
-            "Import, validate and plot Bruker Xepr ASCII CW-EPR files. "
-            "Use a positional input for one file, or --input-dir for a batch."
+            "Import, validate and plot Bruker Xepr ASCII (.ASC) or BES3T "
+            "(.DSC + .DTA) CW-EPR files. Use a positional input for one "
+            "dataset, or --input-dir for a batch."
         )
     )
     parser.add_argument(
         "input",
         nargs="?",
         default=None,
-        help="Path to one .ASC file (default: data/raw/BSA3T275.ASC).",
+        help=(
+            "Path to one .ASC file or a BES3T .DSC descriptor "
+            "(default: data/raw/BSA3T275.ASC)."
+        ),
     )
     parser.add_argument(
         "--input-dir",
         type=Path,
         default=None,
-        help="Process every .ASC file in this directory (batch mode).",
+        help="Process every .ASC or .DSC entry point in this directory.",
     )
     parser.add_argument(
         "--output-dir",

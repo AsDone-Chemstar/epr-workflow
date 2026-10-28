@@ -32,8 +32,23 @@ LANGUAGES: dict[str, str] = {
 
 _ZH: dict[str, str] = {
     # Window and controls
-    "window_title": "EPR Workflow — ASC 导入与绘图",
+    "window_title": "EPR Workflow — ASC / BES3T 导入与绘图",
     "open_asc": "打开单个 ASC 文件",
+    "open_dataset": "打开数据文件…",
+    "dataset_filter": (
+        "Xepr 数据 (*.asc *.ASC *.dsc *.DSC);;所有文件 (*.*)"
+    ),
+    "dialog_select_dataset": "选择 ASC 或 BES3T DSC 文件",
+    "meta_format": "格式：{format}",
+    "meta_source_files": "源文件：{descriptor} + {data}",
+    "meta_bes3t_axis": (
+        "BES3T 轴：{axis_type}，XMIN={xmin}，XWID={xwid}，"
+        "单位 {unit}，包含两端点"
+    ),
+    "meta_bes3t_data": (
+        "BES3T 数据：{ikkf}，IRFMT={irfmt}（{dtype}），"
+        "{byte_order} 字节序，{points} 点"
+    ),
     "batch_process": "批量处理文件夹…",
     "output_directory": "输出目录…",
     "recursive_subdirs": "递归子目录",
@@ -80,7 +95,7 @@ _ZH: dict[str, str] = {
     "prep_reset": "重置",
     "prep_export": "导出处理结果…",
     "prep_scope_note": (
-        "仅在内存中处理；原始 ASC 文件不会被修改，预览不会写入任何文件。"
+        "仅在内存中处理；原始数据文件不会被修改，预览不会写入任何文件。"
     ),
     "prep_status_raw": "状态：原始数据",
     "prep_status_preview": "状态：预览（未应用）",
@@ -298,6 +313,76 @@ _ZH: dict[str, str] = {
     "prep_error_savgol_output_invalid": "Savitzky–Golay 返回了无效数组。",
     "prep_error_savgol_input_source": "平滑输入来源无效。",
     "prep_error_unsupported_operation": "不支持的处理操作。",
+    # BES3T import errors
+    "bes3t_error_bes3t_entry_not_dsc": (
+        "所选文件不是 BES3T .DSC 描述文件。请选择 .DSC 文件。"
+    ),
+    "bes3t_error_bes3t_companion_missing": (
+        "缺少 {descriptor} 对应的 .DTA 数据文件。文件名主干必须相同"
+        "（扩展名大小写不敏感），并位于 {directory}。"
+    ),
+    "bes3t_error_bes3t_companion_ambiguous": (
+        "{descriptor} 对应多个 .DTA 文件：{candidates}。"
+        "请移除或重命名歧义文件。"
+    ),
+    "bes3t_error_bes3t_directory_unreadable": (
+        "无法读取描述文件所在目录：{path}。"
+    ),
+    "bes3t_error_bes3t_descriptor_decode": (
+        "BES3T 描述文件不是有效的 UTF-8 文本：{path}。"
+    ),
+    "bes3t_error_bes3t_descriptor_missing": (
+        "BES3T 描述文件缺少 #DESC 段：{path}。"
+    ),
+    "bes3t_error_bes3t_missing_parameter": (
+        "BES3T 描述文件缺少必需参数 {parameter}。"
+    ),
+    "bes3t_error_bes3t_duplicate_parameter": (
+        "BES3T 参数 {parameter} 出现多次（行 {lines}），"
+        "无法确定应使用哪一个。"
+    ),
+    "bes3t_error_bes3t_invalid_parameter": (
+        "BES3T 参数 {parameter} 的值无效：{value}。"
+    ),
+    "bes3t_error_bes3t_data_unreadable": (
+        "无法读取 .DTA 数据文件：{path}。"
+    ),
+    "bes3t_error_bes3t_unsupported_byte_order": (
+        "不支持的 BES3T 字节序 BSEQ={value}；仅支持 BIG 或 LIT。"
+    ),
+    "bes3t_error_bes3t_unsupported_complex": (
+        "当前版本不支持复数 BES3T 数据（IKKF=CPLX）。"
+    ),
+    "bes3t_error_bes3t_unsupported_data_kind": (
+        "当前版本仅支持每点一个实数值；IKKF/IRFMT={value} 不受支持。"
+    ),
+    "bes3t_error_bes3t_unsupported_format": (
+        "不支持的 BES3T 数值格式 IRFMT={value}。"
+    ),
+    "bes3t_error_bes3t_unsupported_axis": (
+        "不支持的 BES3T 轴类型 XTYP={value}；当前仅支持 IDX。"
+    ),
+    "bes3t_error_bes3t_unsupported_units": (
+        "不支持的 BES3T 轴单位 XUNI={value}；当前仅支持 G，"
+        "且不进行单位换算。"
+    ),
+    "bes3t_error_bes3t_unsupported_multidimensional": (
+        "不支持的 BES3T 多维数据；当前仅支持一维数据。"
+    ),
+    "bes3t_error_bes3t_axis_invalid": (
+        "BES3T 轴参数无效，无法构造严格单调的磁场轴。"
+    ),
+    "bes3t_error_bes3t_truncated": (
+        "BES3T .DTA 数据被截断：应有 {expected_bytes} 字节，"
+        "实际 {actual_bytes} 字节。"
+    ),
+    "bes3t_error_bes3t_trailing_bytes": (
+        "BES3T .DTA 含有意外尾随字节：应有 {expected_bytes} 字节，"
+        "实际 {actual_bytes} 字节。"
+    ),
+    "bes3t_error_bes3t_nonfinite": (
+        "BES3T 数据在索引 {index} 处包含非有限强度值，已拒绝导入。"
+    ),
     # Preprocessing warnings
     "prep_warning_few_points": (
         "区间 {start:.4f}–{end:.4f} G 仅有 {count} 个点（最低 {required} 个）；"
@@ -326,7 +411,7 @@ _ZH: dict[str, str] = {
     # File dialogs
     "dialog_select_asc": "选择 ASC 文件",
     "asc_filter": "Xepr ASCII (*.asc *.ASC);;所有文件 (*.*)",
-    "dialog_select_batch_dir": "选择包含 ASC 文件的文件夹",
+    "dialog_select_batch_dir": "选择包含 ASC 或 BES3T DSC 文件的文件夹",
     "dialog_select_output_dir": "选择输出目录",
     # Dialogs and error messages
     "title_outputs_exist": "已存在输出",
@@ -383,8 +468,21 @@ _ZH: dict[str, str] = {
 
 _EN: dict[str, str] = {
     # Window and controls
-    "window_title": "EPR Workflow — ASC Import and Plotting",
+    "window_title": "EPR Workflow — ASC / BES3T Import and Plotting",
     "open_asc": "Open ASC File",
+    "open_dataset": "Open Dataset…",
+    "dataset_filter": "Xepr Data (*.asc *.ASC *.dsc *.DSC);;All Files (*.*)",
+    "dialog_select_dataset": "Select an ASC or BES3T DSC File",
+    "meta_format": "Format: {format}",
+    "meta_source_files": "Source files: {descriptor} + {data}",
+    "meta_bes3t_axis": (
+        "BES3T axis: {axis_type}, XMIN={xmin}, XWID={xwid}, unit {unit}, "
+        "both endpoints included"
+    ),
+    "meta_bes3t_data": (
+        "BES3T data: {ikkf}, IRFMT={irfmt} ({dtype}), {byte_order} byte "
+        "order, {points} points"
+    ),
     "batch_process": "Batch Process Folder…",
     "output_directory": "Output Directory…",
     "recursive_subdirs": "Include Subdirectories",
@@ -433,8 +531,8 @@ _EN: dict[str, str] = {
     "prep_reset": "Reset",
     "prep_export": "Export Processed Results…",
     "prep_scope_note": (
-        "Processing is in-memory only; the raw ASC file is never modified, "
-        "and previews write no files."
+        "Processing is in-memory only; the raw source files are never "
+        "modified, and previews write no files."
     ),
     "prep_status_raw": "Status: raw data",
     "prep_status_preview": "Status: preview (not applied)",
@@ -706,6 +804,82 @@ _EN: dict[str, str] = {
     ),
     "prep_error_savgol_input_source": "Invalid smoothing input source.",
     "prep_error_unsupported_operation": "Unsupported preprocessing operation.",
+    # BES3T import errors
+    "bes3t_error_bes3t_entry_not_dsc": (
+        "The selected file is not a BES3T .DSC descriptor. Choose a .DSC file."
+    ),
+    "bes3t_error_bes3t_companion_missing": (
+        "Missing .DTA companion for {descriptor}. The filename stem must match "
+        "(extension case-insensitive) and the file must be in {directory}."
+    ),
+    "bes3t_error_bes3t_companion_ambiguous": (
+        "Multiple .DTA companions match {descriptor}: {candidates}. "
+        "Remove or rename the ambiguous files."
+    ),
+    "bes3t_error_bes3t_directory_unreadable": (
+        "Could not read the descriptor directory: {path}."
+    ),
+    "bes3t_error_bes3t_descriptor_decode": (
+        "The BES3T descriptor is not valid UTF-8 text: {path}."
+    ),
+    "bes3t_error_bes3t_descriptor_missing": (
+        "The BES3T descriptor has no #DESC section: {path}."
+    ),
+    "bes3t_error_bes3t_missing_parameter": (
+        "Required BES3T parameter {parameter} is missing."
+    ),
+    "bes3t_error_bes3t_duplicate_parameter": (
+        "BES3T parameter {parameter} appears more than once (lines {lines}); "
+        "the value is ambiguous."
+    ),
+    "bes3t_error_bes3t_invalid_parameter": (
+        "Invalid value for BES3T parameter {parameter}: {value}."
+    ),
+    "bes3t_error_bes3t_data_unreadable": (
+        "Could not read the .DTA companion: {path}."
+    ),
+    "bes3t_error_bes3t_unsupported_byte_order": (
+        "Unsupported BES3T byte order BSEQ={value}; only BIG and LIT are "
+        "supported."
+    ),
+    "bes3t_error_bes3t_unsupported_complex": (
+        "Complex-valued BES3T data (IKKF=CPLX) are not supported in this "
+        "release."
+    ),
+    "bes3t_error_bes3t_unsupported_data_kind": (
+        "Only one real value per point is supported; IKKF/IRFMT={value} is "
+        "unsupported."
+    ),
+    "bes3t_error_bes3t_unsupported_format": (
+        "Unsupported BES3T numeric format IRFMT={value}."
+    ),
+    "bes3t_error_bes3t_unsupported_axis": (
+        "Unsupported BES3T axis type XTYP={value}; only IDX is supported."
+    ),
+    "bes3t_error_bes3t_unsupported_units": (
+        "Unsupported BES3T axis unit XUNI={value}; only G is supported and no "
+        "unit conversion is applied."
+    ),
+    "bes3t_error_bes3t_unsupported_multidimensional": (
+        "Unsupported multidimensional BES3T data; only one-dimensional data "
+        "are supported."
+    ),
+    "bes3t_error_bes3t_axis_invalid": (
+        "The BES3T axis parameters are invalid or do not produce a strictly "
+        "monotonic field axis."
+    ),
+    "bes3t_error_bes3t_truncated": (
+        "Truncated BES3T .DTA payload: expected {expected_bytes} bytes, found "
+        "{actual_bytes}."
+    ),
+    "bes3t_error_bes3t_trailing_bytes": (
+        "Unexpected trailing bytes in the BES3T .DTA payload: expected "
+        "{expected_bytes} bytes, found {actual_bytes}."
+    ),
+    "bes3t_error_bes3t_nonfinite": (
+        "Non-finite BES3T intensity at index {index}; the dataset was "
+        "rejected."
+    ),
     # Preprocessing warnings
     "prep_warning_few_points": (
         "Window {start:.4f}–{end:.4f} G has only {count} point(s) (minimum "
@@ -743,7 +917,7 @@ _EN: dict[str, str] = {
     # File dialogs
     "dialog_select_asc": "Select ASC File",
     "asc_filter": "Xepr ASCII (*.asc *.ASC);;All Files (*.*)",
-    "dialog_select_batch_dir": "Select a Folder Containing ASC Files",
+    "dialog_select_batch_dir": "Select a Folder Containing ASC or BES3T DSC Files",
     "dialog_select_output_dir": "Select Output Directory",
     # Dialogs and error messages
     "title_outputs_exist": "Outputs Already Exist",

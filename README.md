@@ -4,11 +4,12 @@
 
 用于 **Bruker ELEXSYS E580 / Xepr** 导出的 CW-EPR 数据的 Python 分析工作流。
 
-当前版本：**0.1.1**。版本更新与历史版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本：**0.2.0**。版本更新与历史版本说明见 [CHANGELOG.md](CHANGELOG.md)。
 
-当前版本完成：**导入 → 校验 → 绘制原始谱图 → 导出**，用户主动触发的
-**线性基线校正**与 **Savitzky–Golay 平滑**，以及独立的 **Plot Editor（绘图设置）**。
-预处理只在内存副本上进行，不自动应用，不修改原始 ASC 文件；Plot Editor 只改变
+当前版本完成：**导入 → 校验 → 绘制原始谱图 → 导出**，支持 Xepr 三列
+ASCII `.ASC` 与原生 BES3T `.DSC`/`.DTA` 配对数据；以及用户主动触发的
+**线性基线校正**、**Savitzky–Golay 平滑**和独立的 **Plot Editor（绘图设置）**。
+预处理只在内存副本上进行，不自动应用，不修改原始数据；Plot Editor 只改变
 可视化设置，不修改原始数据、已处理数据或预处理历史。未实现归一化、插值、去尖峰、
 自动基线识别或全局曲线拟合。
 
@@ -53,8 +54,10 @@ $env:PYTHONPATH = "src"
 
 GUI 功能：
 
-- 打开单个 ASC 文件，只读显示原始谱图（不写任何输出）。
-- 选择文件夹批量处理，生成 CSV / PNG / JSON 与批次汇总。
+- 打开单个 `.ASC` 文件或 BES3T `.DSC` 描述文件，只读显示原始谱图
+  （不写任何输出）；DTA 由 DSC 自动配对，不能单独作为数据入口。
+- 选择文件夹批量处理，生成 CSV / PNG / JSON 与批次汇总；批量模式发现
+  `.ASC` 和 `.DSC`，不会把 `.DTA` 当作独立数据集。
 - 样品列表用颜色标注成功 / 成功但有警告 / 失败；点击样品查看其谱图。
 - 工具栏提供缩放、平移、复位；鼠标悬停显示光标处的磁场与强度。
 - 显示磁场范围、数据点数、信号统计与校验警告。
@@ -67,7 +70,7 @@ GUI 功能：
   绘图设置不会修改数据或预处理记录。
 - 绘图设置可导出为 PNG，导出的是 Matplotlib 图像本身而不是窗口截图；默认不覆盖。
 - 界面支持**简体中文 / English 实时切换**：右上角「语言 / Language」下拉框。
-  切换语言不会重新读取 ASC 文件、不会重新批量处理，也不会清空已加载的谱图、
+  切换语言不会重新读取原始数据文件、不会重新批量处理，也不会清空已加载的谱图、
   样品列表、批次结果、当前选中样品或光标读数。
 - 语言选择保存在 `config\gui_settings.ini`（只保存语言代码，不写注册表）；
   重启后自动恢复，没有记录时默认简体中文。
@@ -88,7 +91,13 @@ cd "D:\EPR workflow"
 
 # 指定文件并立即弹窗查看
 .\.venv\Scripts\python.exe src\epr_workflow\plot_asc.py "data\raw\BSA5P5T10.ASC" --show
+
+# 处理原生 BES3T 数据集：入口是 .DSC，而不是 .DTA
+.\.venv\Scripts\python.exe src\epr_workflow\plot_asc.py "path\to\sample.DSC"
 ```
+
+BES3T 的 `.DSC` 与 `.DTA` 必须位于同一目录、文件名主干相同；扩展名大小写
+不敏感。`.DTA` 只是伴随文件，不能单独作为输入。
 
 也可以用模块方式运行（需先设置 `PYTHONPATH`）：
 
@@ -102,7 +111,7 @@ $env:PYTHONPATH = "src"
 ```powershell
 cd "D:\EPR workflow"
 
-# 处理 data\raw 下所有 .ASC 文件（不搜索子目录）
+# 处理 data\raw 下所有 .ASC 与 .DSC 入口（不搜索子目录，不单独处理 .DTA）
 .\.venv\Scripts\python.exe src\epr_workflow\plot_asc.py --input-dir data\raw --output-dir results
 
 # 只输出到新的目录，避免碰到已有结果
@@ -117,7 +126,8 @@ cd "D:\EPR workflow"
 
 批量模式规则：
 
-- 只处理扩展名为 `.asc` 的文件，**大小写不敏感**。
+- 只处理扩展名为 `.asc` 或 `.dsc` 的入口文件，**大小写不敏感**；
+  `.dta` 是 BES3T 伴随文件，绝不会被当作独立数据集。
 - 默认不搜索子目录，需要时加 `--recursive`。
 - 处理顺序固定（按相对路径不区分大小写排序），每次运行一致。
 - 某个文件失败不会中断其他文件；失败信息写入批次汇总。
@@ -128,8 +138,8 @@ cd "D:\EPR workflow"
 
 | 参数 | 说明 |
 | --- | --- |
-| `input` | 单文件模式：输入 `.ASC` 路径，默认 `data\raw\BSA3T275.ASC` |
-| `--input-dir PATH` | 批处理模式：处理该目录下的 `.ASC` |
+| `input` | 单文件模式：输入 `.ASC` 路径或 BES3T `.DSC` 描述文件，默认 `data\raw\BSA3T275.ASC` |
+| `--input-dir PATH` | 批处理模式：处理该目录下的 `.ASC` 和 `.DSC` 入口（忽略 `.DTA`） |
 | `--output-dir PATH` | 输出根目录，默认 `results`（批次时结果放在其下的 figures/tables/logs） |
 | `--recursive` | 批处理时搜索子目录（默认关闭） |
 | `--overwrite` | 允许替换已存在的输出文件（默认拒绝） |
@@ -144,10 +154,10 @@ cd "D:\EPR workflow"
 
 ### 3.4 预处理（线性基线校正 / Savitzky–Golay 平滑，仅 GUI）
 
-处理只在内存副本上进行；原始 ASC 文件与已有的原始导出结果都不会被修改。
-默认没有选择任何基线区间，平滑也不会自动启用。
+处理只在内存副本上进行；原始数据文件（ASC 或 BES3T DSC/DTA）与已有的原始导出
+结果都不会被修改。默认没有选择任何基线区间，平滑也不会自动启用。
 
-1. 打开单个 ASC 文件，或批量处理后选中一个样品。
+1. 打开单个受支持的数据文件（ASC 或 BES3T DSC），或批量处理后选中一个样品。
 2. 在左栏“预处理”的“方法”中选择：
    - **线性基线校正**：填写左、右两个闭区间（单位 G）。
      四个输入框初始为空，不填写就无法预览或应用。
@@ -224,7 +234,7 @@ Plot Editor 是左栏独立的“绘图”标签页，**只改变可视化设置
   状态，保留用户自定义的名称、颜色、线宽、线型与坐标轴设置。
 - 绘图设置按样品保存在当前会话内存中；切换样品后可恢复。源文件 SHA-256 变化时，
   该样品的旧设置作废。关闭程序后设置不保留。
-- 语言切换会更新自动标题/标签与图例默认名称，但不会重新读取 ASC 文件，也不会
+- 语言切换会更新自动标题/标签与图例默认名称，但不会重新读取原始数据文件，也不会
   重新校正或平滑；用户自定义的文字与样式保持不变。
 - 预处理处于**未应用的预览**状态时禁止导出绘图，避免把临时预览误当作正式结果。
 
@@ -345,9 +355,34 @@ CSV 中的 `index`：仅当所有值都是有效整数时以整数写出（`1` �
   保留。这与 4.4 中处理结果 PNG/JSON 固定使用英文的规则不同。
 - 尺寸、DPI、是否包含标题/图例由导出对话框决定；默认 `8 × 5 in`、`300 dpi`。
 - 该文件是**显示输出**，不是新的科学数据记录；不会生成或修改 CSV/JSON。
-- 导出不会改变原始 ASC、已导出的 `_raw` 结果或当前会话的预处理历史。
+- 导出不会改变原始数据文件、已导出的 `_raw` 结果或当前会话的预处理历史。
 
-## 5. 支持的 ASC 格式假设
+### 4.6 BES3T 导入输出
+
+- 原始导出命名与 ASC 相同：`<sample>_raw.csv`、`<sample>_raw.png`、
+  `<sample>_metadata.json`，其中 `<sample>` 是 `.DSC` 文件名主干。
+- BES3T 原始 CSV 在历史三列之后增加常量列
+  `source_format`（值为 `BES3T`），用于在文件层面区分来源格式；
+  ASC CSV 仍保持 `index, field_G, intensity` 三列不变。
+- BES3T 处理结果 CSV 同样在末尾增加 `source_format=BES3T`；
+  原始强度列仍为 `intensity_raw`，处理后为 `intensity_corrected`。
+- JSON 顶层增加：
+  - `source_format`：`BES3T`；
+  - `source_files`：DSC 与 DTA 的角色、绝对路径、文件名、前后 SHA-256、
+    文件大小及未变标志；
+  - `sha256_definition`：组合 SHA-256 的定义；
+  - `file_size_bytes_definition`：文件大小为两者之和；
+  - `format_metadata`：原始描述文本、`#DESC`/`#SPL`/`#DSL` 记录、
+    解析参数、推断参数、轴定义、二进制类型/字节序、诊断；
+  - `assumptions`：BES3T 专用假设。
+- `sha256` 是 DSC SHA-256 与 DTA SHA-256 按 `BES3T:<dsc>:<dta>` 组合后的
+  SHA-256，不是任一单文件哈希；两个源文件中任一改变都会使来源校验失败。
+- `data/raw` 写入防护、源文件覆盖防护、处理结果覆盖保护同样适用于 DSC 与 DTA；
+  Plot Editor 导出也会拒绝把 DSC 或 DTA 当作输出路径。
+
+## 5. 支持的数据格式与假设
+
+### 5.1 Xepr ASCII `.ASC`
 
 1. 纯文本，空白（空格/Tab）分隔，**三列**。
 2. 表头行包含 `index`、`Field [G]`、`Intensity []` 三个关键字，且按此顺序。
@@ -361,6 +396,51 @@ CSV 中的 `index`：仅当所有值都是有效整数时以整数写出（`1` �
    且基线在未记录单位的强度上是可加的。该假设由用户判断，程序不验证。
 9. Savitzky–Golay 平滑假设：局部窗口内的信号可由低阶多项式近似；
    平滑会改变峰高、峰宽和线形，不代表数据质量一定改善。
+
+### 5.2 Bruker BES3T `.DSC` + `.DTA`
+
+第一版只支持**一维、实数值**的 BES3T 数据集。读取流程：
+
+1. 以 `.DSC` 描述文件为入口，在其所在目录查找同名 `.DTA`
+   （文件名主干大小写不敏感）；`.DTA` 不能单独打开。
+2. 解析 `#DESC` 层，要求以下参数存在且可验证：
+   - `BSEQ`：`BIG` 或 `LIT`；不使用未经验证的默认字节序。
+   - `IKKF`：仅接受单个 `REAL`；`CPLX` 或多重值被拒绝。
+   - `IRFMT`：仅接受单个 `C`/`S`/`I`/`F`/`D`
+     （int8/int16/int32/float32/float64）。
+   - `XTYP`：仅接受 `IDX`；`IGD`（外部 `.XGF` 轴）与 `NTUP` 未实现。
+   - `XPTS`：正整数且至少为 3。
+   - `XMIN`、`XWID`：有限数值，`XWID` 不得为 0。
+   - `XUNI`：仅接受 `G`（Gauss）；当前不做 mT 等单位换算。
+3. `YPTS`/`ZPTS` 缺失时按 BES3T 规范推断为 1，并在来源记录中标记为
+   `inferred_parameters`；若显式给出大于 1，或 `YTYP`/`ZTYP` 不是 `NODATA`，
+   则作为多维数据拒绝。
+4. 线性轴按 `linspace(XMIN, XMIN + XWID, XPTS)` 构造，**包含两个端点**。
+   因此相邻点步长为 `XWID / (XPTS - 1)`，不是 `XWID / XPTS`。
+5. 根据 `IRFMT` 与 `BSEQ` 解码 `DTA`，并严格检查期望字节数：
+   少于期望值报“截断”，多于期望值报“尾随字节”，不会静默截断或补齐。
+6. 保留原始点顺序；不排序、不插值、不缩放、不平滑、不做基线校正。
+7. 原始描述文本、全部 `#DESC`/`#SPL`/`#DSL` 记录、解析值、推断值、
+   两个源文件的 SHA-256 和文件大小写入 JSON 来源记录。
+8. 实数整数类型在内存中转换为 float64，以复用现有数据处理模型；
+   数值本身不改变，并在 assumptions 中记录。
+
+不支持：复数、多维、`IGD` 轴、`NTUP` 轴、非 Gauss 轴单位、
+多谐波/每点多值布局、缺失必需元数据、截断数据和尾随字节。
+遇到这些情况会明确报错，不会猜测或强行读取。
+
+`Test data\` 中的 `BSA3mal1h.DSC`/`.DTA` 是本地验证样本，不随仓库上传。
+
+本版本对该真实样本的验证结果：
+
+- `XPTS=1024`，`DTA` 为 8192 字节，符合 1024 × 8 字节。
+- `IRFMT=D`、`BSEQ=BIG`，按大端 float64 解码。
+- `XMIN=3310`、`XWID=100`，构造轴为 3310–3410 G，包含 1024 点。
+- 首三个强度值为 `-76, -69, -67`，末点为 `-84`；数值与原始二进制一致。
+- 测试前后 DSC 与 DTA 的 SHA-256 均未改变。
+
+未提供该样本对应的 Xepr ASCII 导出，因此**尚未完成逐点跨格式比较**；
+这一项仍待补充真实的 `.ASC` 导出后验证。仅成功绘图不构成解析正确的充分证据。
 
 ## 6. 校验规则
 
@@ -379,10 +459,23 @@ CSV 中的 `index`：仅当所有值都是有效整数时以整数写出（`1` �
 - Savitzky–Golay 窗口长度必须为奇数、至少 3、且不超过数据点数；
   多项式阶数必须满足 `0 ≤ polyorder < window_length`；输入必须全部有限。
 - 平滑不改变数据点数量、磁场轴或行序；不执行缩放、归一化或去点。
+- BES3T `.DSC`/`.DTA` 配对按文件名主干大小写不敏感匹配；不把同名不匹配的
+  `.DTA` 自动配对。
+- BES3T 必需参数缺失、重复或类型错误时直接拒绝；不采用静默默认值。
+- BES3T `DTA` 字节数必须严格等于 `XPTS × 每点字节数`；截断或尾随字节均拒绝。
+- BES3T 轴必须由 `XMIN`/`XWID`/`XPTS` 构造成严格单调；不排序、不反转、
+  不替换缺失轴。
+- 非有限 BES3T 强度整份数据拒绝，不删除单点后继续。
+- 导入后重新计算 DSC 与 DTA 的 SHA-256；任一文件改变即认为来源已变。
 
 ## 7. 当前限制
 
-- 只支持上述三列 Xepr ASCII 格式；不解析 DSC / DTA / PAR 等 Bruker 二进制格式。
+- 只支持上述三列 Xepr ASCII `.ASC`，以及本版本明确限定的一维实数
+  BES3T `.DSC`/`.DTA`；不解析 PAR/SPC、二维/三维 BES3T、复数数据、
+  `IGD` 外部轴文件或 `NTUP` 轴。
+- BES3T 轴单位目前只接受 `G`；不会自动把 mT 等单位换算为 G。
+- BES3T 的 `DSRC` 若不是 `EXP` 会给出警告，但程序不会仅凭该字段判断
+  数据的科学有效性。
 - 不读取 Xepr 的采集参数（微波频率、功率、调制幅度、时间常数等），
   因此图中不标注任何未经验证的实验条件。
 - 不区分吸收谱 / 一阶导数谱，也不判断信号类型。
@@ -454,11 +547,17 @@ GUI 预处理测试覆盖：默认未选择任何区间、平滑默认关闭、�
 Plot Editor 测试覆盖：曲线按实际预处理结果动态出现、拟合基线默认隐藏且由已记录
 参数求值（不重新拟合）、可见性/名称/颜色/线宽/线型、标题与空标签、自动/手动范围
 与非法范围报错、图例位置、字号、重置与恢复默认可见性、按样品保存与恢复、语言切换
-不重读 ASC 且不重新处理、未应用预览时禁止导出、无可见曲线报错、默认路径与覆盖保护、
+不重读原始数据且不重新处理、未应用预览时禁止导出、无可见曲线报错、默认路径与覆盖保护、
 导出图像尺寸/DPI、包含标题/图例选项、源文件哈希不变，以及不修改已有 CSV/JSON。
+BES3T 测试覆盖：有效一维实数数据、点数与逐值一致、大端/小端、float64/float32/
+整数格式、轴公式与端点、单文件/批量/CLI/GUI/处理导出集成、DTA 不被当作独立数据集、
+缺失 DSC/DTA、大小写扩展名、必需参数缺失/重复/非法、复数、多维、IGD/mT/A 格式、
+零宽度/点数不足、截断与尾随字节、非有限值、DSC 与 DTA 哈希不变，以及真实
+`BSA3mal1h` 样本的 1024 点/3310–3410 G/首末值检查。真实样本不存在时该测试自动跳过。
 Plot Editor 的纯逻辑与导出器也分别有独立测试，使用临时目录和合成数据；
 测试中的错误输入不会写入实验数据目录。
-测试中的错误输入均写入临时目录，不会破坏实验数据。
+当前完整测试结果：**298 passed, 1 skipped**（跳过项为 Windows 上无法构造的
+大小写歧义伴随文件；真实 BES3T 样本在本机存在时会实际执行）。
 
 ## 9. 目录结构
 
@@ -466,13 +565,15 @@ Plot Editor 的纯逻辑与导出器也分别有独立测试，使用临时目�
 EPR workflow\
 ├── .venv\
 ├── data\raw\            # 原始实验数据（只读）
+├── Test data\           # 本地 BES3T 验证样本（不随仓库上传）
 ├── results\figures\     # 输出图片
 ├── results\tables\      # 输出表格
 ├── results\logs\        # 输出报告与批处理汇总
 ├── 启动 EPR Workflow.bat  # 双击启动 GUI
 ├── src\epr_workflow\
 │   ├── __init__.py
-│   ├── plot_asc.py       # 导入 / 校验 / 绘图 / 导出 / 批处理
+│   ├── plot_asc.py       # ASC 导入 / 校验 / 绘图 / 导出 / 批处理
+│   ├── bes3t.py          # BES3T .DSC/.DTA 严格读取（无 Qt）
 │   ├── preprocessing.py  # 基线校正 + Savitzky–Golay（纯 NumPy/SciPy，无 Qt）
 │   ├── plot_settings.py  # Plot Editor 设置模型与统一绘图函数（无 Qt）
 │   ├── plot_export.py    # PNG 绘图导出（独立 Agg 图形，原子写入）
@@ -493,6 +594,7 @@ EPR workflow\
 ├── tests\
 │   ├── test_plot_asc.py
 │   ├── test_batch.py
+│   ├── test_bes3t.py
 │   ├── test_preprocessing.py
 │   ├── test_savgol.py
 │   ├── test_processed_export.py
@@ -502,6 +604,7 @@ EPR workflow\
 │   ├── test_gui_i18n.py
 │   ├── test_gui_preprocessing.py
 │   ├── test_gui_plot_editor.py
+│   ├── test_gui_bes3t.py
 │   └── test_gui_widgets.py
 ├── conftest.py
 ├── requirements.txt
