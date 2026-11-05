@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "project": "EPR Workflow",
+  "version": "0.2.0",
+  "git_commit": "327d5f6",
+  "generated_on": "2026-11-02",
+  "description": "Read-only numerical baseline for M0. Values were produced by the current v0.2.0 loaders; no raw data are stored here.",
+  "datasets": {
+    "asc_real": {
+      "relative_path": "data/raw/BSA3T275.ASC",
+      "source_format": "ASC",
+      "file_size_bytes": 52276,
+      "sha256": "e1ff52bae09fc05a9cc09234b8214fc0e5049f9483ad1466d5977dec81f18403",
+      "source_hashes": {
+        "source": "e1ff52bae09fc05a9cc09234b8214fc0e5049f9483ad1466d5977dec81f18403"
+      },
+      "n_points": 1024,
+      "field_first": 3280.0,
+      "field_last": 3380.0,
+      "field_min": 3280.0,
+      "field_max": 3380.0,
+      "field_direction": "strictly increasing",
+      "intensity_first": 400.088,
+      "intensity_last": -181.85,
+      "intensity_min": -5294.82,
+      "intensity_max": 7642.7,
+      "intensity_first5": [
+        400.088,
+        272.312,
+        364.536,
+        -29.2404,
+        185.984
+      ],
+      "intensity_last5": [
+        250.255,
+        -65.5214,
+        82.7025,
+        -162.074,
+        -181.85
+      ],
+      "warnings": [],
+      "rejected_rows": 0,
+      "missing_value_count": 0,
+      "nonfinite_value_count": 0,
+      "duplicate_field_count": 0,
+      "index_continuity": "consecutive"
+    },
+    "bes3t_real": {
+      "relative_path": "Test data/BSA3mal1h.DSC",
+      "companion_relative_path": "Test data/BSA3mal1h.DTA",
+      "source_format": "BES3T",
+      "file_size_bytes": 10789,
+      "sha256": "25200bf80d6b002be315f48e34644b59bed0c306442c499077cadb65eba71c1e",
+      "source_hashes": {
+        "descriptor": "7c52452974547d0eddcaf9c01a4f341d34ec43602648db946f2afd8634ce13ce",
+        "data": "80a56acbdc779790f570a3c99315aedb032b3e761bf4941efeda214f6a987eda"
+      },
+      "n_points": 1024,
+      "field_first": 3310.0,
+      "field_last": 3410.0,
+      "field_min": 3310.0,
+      "field_max": 3410.0,
+      "field_direction": "strictly increasing",
+      "intensity_first": -76.0,
+      "intensity_last": -84.0,
+      "intensity_min": -9903.0,
+      "intensity_max": 10078.0,
+      "intensity_first5": [
+        -76.0,
+        -69.0,
+        -67.0,
+        -74.0,
+        -69.0
+      ],
+      "intensity_last5": [
+        -77.0,
+        -90.0,
+        -74.0,
+        -79.0,
+        -84.0
+      ],
+      "warnings": [],
+      "rejected_rows": 0,
+      "missing_value_count": 0,
+      "nonfinite_value_count": 0,
+      "duplicate_field_count": 0,
+      "index_continuity": "consecutive",
+      "descriptor_version": "1.2",
+      "axis": {
+        "type": "IDX",
+        "name": "Field",
+        "unit": "G",
+        "points": 1024,
+        "XMIN": 3310.0,
+        "XWID": 100.0,
+        "endpoint_included": true,
+        "construction": "linspace(XMIN, XMIN + XWID, XPTS)",
+        "first": 3310.0,
+        "last": 3410.0,
+        "step": 0.09775171065484756,
+        "field_order": "strictly increasing"
+      },
+      "binary": {
+        "IKKF": "REAL",
+        "IRFMT": "D",
+        "numpy_dtype": ">f8",
+        "byte_order": "BIG",
+        "itemsize": 8,
+        "values_per_point": 1,
+        "dimensions": {
+          "XPTS": 1024,
+          "YPTS": 1,
+          "ZPTS": 1
+        },
+        "expected_bytes": 8192,
+        "actual_bytes": 8192
+      }
+    }
+  }
+}

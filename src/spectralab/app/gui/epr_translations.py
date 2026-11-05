@@ -1,0 +1,83 @@
+"""EPR GUI translation catalog (Qt-free)."""
+
+from __future__ import annotations
+
+EPR_TECHNIQUE_ID = "epr"
+EPR_DISPLAY_NAME_KEY = "technique.epr.name"
+EPR_FILE_PATTERNS = ("*.asc", "*.ASC", "*.dsc", "*.DSC")
+
+EPR_TRANSLATIONS = {
+    "zh": {
+        "technique.epr.name": "EPR（ASC / BES3T）",
+        "epr.file": "文件：{name}",
+        "epr.file_none": "尚未加载 EPR 光谱。",
+        "epr.plot_group": "原始 / 处理谱",
+        "epr.processing_group": "显式处理",
+        "epr.baseline_group": "线性基线",
+        "epr.left_start": "左窗口起点（G）",
+        "epr.left_end": "左窗口终点（G）",
+        "epr.right_start": "右窗口起点（G）",
+        "epr.right_end": "右窗口终点（G）",
+        "epr.apply_baseline": "应用线性基线",
+        "epr.savgol_group": "Savitzky–Golay",
+        "epr.window_length": "窗口长度",
+        "epr.polyorder": "多项式阶数",
+        "epr.apply_savgol": "应用平滑",
+        "epr.undo": "撤销",
+        "epr.redo": "重做",
+        "epr.reset": "重置处理",
+        "epr.raw_label": "原始",
+        "epr.processed_label": "处理后",
+        "epr.loaded": "已加载 {points} 个点（{format_id}）。",
+        "epr.import_failed": "导入失败：{error}",
+        "epr.baseline_empty": "请显式填写四个基线窗口边界。",
+        "epr.baseline_applied": "已应用线性基线。",
+        "epr.savgol_applied": "已应用 Savitzky–Golay 平滑。",
+        "epr.undo_applied": "已撤销上一步处理。",
+        "epr.redo_applied": "已恢复上一步处理。",
+        "epr.reset_applied": "已重置到原始光谱。",
+        "epr.operation_failed": "处理失败：{error}",
+        "epr.no_spectrum": "尚未加载光谱。",
+        "epr.processing_state": "处理历史：{count} 步",
+    },
+    "en": {
+        "technique.epr.name": "EPR (ASC / BES3T)",
+        "epr.file": "File: {name}",
+        "epr.file_none": "No EPR spectrum loaded.",
+        "epr.plot_group": "Raw / processed spectrum",
+        "epr.processing_group": "Explicit processing",
+        "epr.baseline_group": "Linear baseline",
+        "epr.left_start": "Left start (G)",
+        "epr.left_end": "Left end (G)",
+        "epr.right_start": "Right start (G)",
+        "epr.right_end": "Right end (G)",
+        "epr.apply_baseline": "Apply linear baseline",
+        "epr.savgol_group": "Savitzky–Golay",
+        "epr.window_length": "Window length",
+        "epr.polyorder": "Polynomial order",
+        "epr.apply_savgol": "Apply smoothing",
+        "epr.undo": "Undo",
+        "epr.redo": "Redo",
+        "epr.reset": "Reset processing",
+        "epr.raw_label": "Raw",
+        "epr.processed_label": "Processed",
+        "epr.loaded": "Loaded {points} points ({format_id}).",
+        "epr.import_failed": "Import failed: {error}",
+        "epr.baseline_empty": "Enter all four baseline window bounds explicitly.",
+        "epr.baseline_applied": "Linear baseline applied.",
+        "epr.savgol_applied": "Savitzky–Golay smoothing applied.",
+        "epr.undo_applied": "Undid the last processing step.",
+        "epr.redo_applied": "Redid the next processing step.",
+        "epr.reset_applied": "Reset to the raw spectrum.",
+        "epr.operation_failed": "Processing failed: {error}",
+        "epr.no_spectrum": "No spectrum loaded.",
+        "epr.processing_state": "Processing history: {count} step(s)",
+    },
+}
+
+__all__ = [
+    "EPR_DISPLAY_NAME_KEY",
+    "EPR_FILE_PATTERNS",
+    "EPR_TECHNIQUE_ID",
+    "EPR_TRANSLATIONS",
+]

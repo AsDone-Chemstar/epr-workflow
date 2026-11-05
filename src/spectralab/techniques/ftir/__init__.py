@@ -1,0 +1,116 @@
+"""Independent SpectraLab FTIR technique backend.
+
+The package provides strict text import, explicit normalization, baseline
+correction and peak picking. It has no Qt, GUI or legacy ``epr_workflow``
+dependency; GUI presentation lives in the application layer.
+"""
+
+from spectralab.techniques.ftir.baseline import (
+    BASELINE_DEGREES,
+    BaselineFit,
+    BaselineRegion,
+    FTIRBaselineError,
+    FTIRBaselineOperation,
+    create_baseline_operation,
+    fit_baseline,
+    normalize_regions,
+)
+from spectralab.techniques.ftir.formats import (
+    FTIR_CSV_SUFFIXES,
+    FTIR_ENTRY_SUFFIXES,
+    FTIR_TXT_SUFFIXES,
+    file_patterns,
+)
+from spectralab.techniques.ftir.normalization import (
+    FTIRNormalizationError,
+    FTIRNormalizationOperation,
+    NORMALIZATION_METHODS,
+    NormalizationMethod,
+    create_normalization_operation,
+    normalize_method,
+    normalize_values,
+)
+from spectralab.techniques.ftir.peaks import (
+    ALGORITHM,
+    ALGORITHM_VERSION,
+    LIMITATIONS,
+    PEAK_POLARITIES,
+    PEAK_SOURCES,
+    Peak1D,
+    PeakDetectionError,
+    PeakDetectionParameters,
+    PeakDetectionResult,
+    PeakPolarity,
+    PeakSource,
+    detect_peak_values,
+    detect_peaks,
+)
+from spectralab.techniques.ftir.importers import (
+    ACQUISITION_MODES,
+    ATR_CORRECTION_STATUSES,
+    ATRCorrectionStatus,
+    AcquisitionMode,
+    ColumnMapping,
+    FTIRImportOptions,
+    FTIRMetadata,
+    GenericCSVImporter,
+    GenericCsvImporter,
+    GenericTXTImporter,
+    GenericTxtImporter,
+    options_from_mapping,
+    parse_column_reference,
+)
+from spectralab.techniques.ftir.technique import (
+    FTIR_IMPORTERS,
+    register_ftir_importers,
+)
+
+__all__ = [
+    "ACQUISITION_MODES",
+    "ATR_CORRECTION_STATUSES",
+    "ATRCorrectionStatus",
+    "AcquisitionMode",
+    "ALGORITHM",
+    "ALGORITHM_VERSION",
+    "BASELINE_DEGREES",
+    "BaselineFit",
+    "BaselineRegion",
+    "ColumnMapping",
+    "FTIRBaselineError",
+    "FTIRBaselineOperation",
+    "FTIR_CSV_SUFFIXES",
+    "FTIR_ENTRY_SUFFIXES",
+    "FTIRNormalizationError",
+    "FTIRNormalizationOperation",
+    "FTIR_TXT_SUFFIXES",
+    "LIMITATIONS",
+    "NORMALIZATION_METHODS",
+    "NormalizationMethod",
+    "PEAK_POLARITIES",
+    "PEAK_SOURCES",
+    "Peak1D",
+    "PeakDetectionError",
+    "PeakDetectionParameters",
+    "PeakDetectionResult",
+    "PeakPolarity",
+    "PeakSource",
+    "FTIR_IMPORTERS",
+    "FTIRImportOptions",
+    "FTIRMetadata",
+    "GenericCSVImporter",
+    "GenericCsvImporter",
+    "GenericTXTImporter",
+    "GenericTxtImporter",
+    "create_baseline_operation",
+    "create_normalization_operation",
+    "detect_peak_values",
+    "detect_peaks",
+    "file_patterns",
+    "fit_baseline",
+    "normalize_method",
+    "normalize_regions",
+    "normalize_values",
+    "options_from_mapping",
+    "parse_column_reference",
+    "register_ftir_importers",
+]

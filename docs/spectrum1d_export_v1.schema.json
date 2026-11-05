@@ -1,0 +1,358 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spectralab.spectrum1d.export",
+  "title": "SpectraLab Spectrum1D export (initial v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "schema_status",
+    "export",
+    "dataset",
+    "axis",
+    "signal",
+    "metadata",
+    "provenance"
+  ],
+  "properties": {
+    "schema_id": {
+      "const": "spectralab.spectrum1d.export"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "schema_status": {
+      "const": "initial"
+    },
+    "export": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "values_included",
+        "point_order",
+        "processing_applied",
+        "numeric_serialization"
+      ],
+      "properties": {
+        "format": {
+          "const": "json"
+        },
+        "values_included": {
+          "const": true
+        },
+        "point_order": {
+          "const": "preserved"
+        },
+        "processing_applied": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "numeric_serialization": {
+          "const": "python-json-shortest-roundtrip-float64"
+        }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset_id", "technique", "source_format", "point_count"],
+      "properties": {
+        "dataset_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "technique": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_format": {
+          "type": ["string", "null"]
+        },
+        "point_count": {
+          "type": "integer",
+          "minimum": 2
+        }
+      }
+    },
+    "axis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quantity",
+        "unit",
+        "name",
+        "direction",
+        "point_count",
+        "metadata_source",
+        "missing_reason",
+        "values"
+      ],
+      "properties": {
+        "quantity": {
+          "enum": [
+            "magnetic_field",
+            "wavenumber",
+            "wavelength",
+            "frequency",
+            "time",
+            "index",
+            "unknown"
+          ]
+        },
+        "unit": {
+          "type": ["string", "null"]
+        },
+        "name": {
+          "type": ["string", "null"]
+        },
+        "direction": {
+          "enum": ["increasing", "decreasing", "unknown"]
+        },
+        "point_count": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "metadata_source": {
+          "type": "string"
+        },
+        "missing_reason": {
+          "type": ["string", "null"]
+        },
+        "values": {
+          "$ref": "#/$defs/numberArray"
+        }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "semantics",
+        "unit",
+        "name",
+        "point_count",
+        "metadata_source",
+        "missing_reason",
+        "values"
+      ],
+      "properties": {
+        "semantics": {
+          "enum": [
+            "intensity",
+            "absorbance",
+            "transmittance",
+            "first_derivative",
+            "unknown"
+          ]
+        },
+        "unit": {
+          "type": ["string", "null"]
+        },
+        "name": {
+          "type": ["string", "null"]
+        },
+        "point_count": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "metadata_source": {
+          "type": "string"
+        },
+        "missing_reason": {
+          "type": ["string", "null"]
+        },
+        "values": {
+          "$ref": "#/$defs/numberArray"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "technique",
+        "title",
+        "instrument",
+        "acquisition",
+        "sample",
+        "technique_metadata",
+        "extra",
+        "unknown_fields",
+        "metadata_origin"
+      ],
+      "properties": {
+        "technique": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": ["string", "null"]
+        },
+        "instrument": {
+          "type": "object"
+        },
+        "acquisition": {
+          "type": "object"
+        },
+        "sample": {
+          "type": "object"
+        },
+        "technique_metadata": {
+          "type": "object"
+        },
+        "extra": {
+          "type": "object"
+        },
+        "unknown_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "metadata_origin": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_format",
+        "importer",
+        "imported_at_utc",
+        "source_files",
+        "canonical_sha256",
+        "sha256_definition",
+        "file_size_bytes",
+        "hash_definitions",
+        "warnings",
+        "assumptions",
+        "diagnostics",
+        "format_metadata",
+        "software_versions",
+        "metadata_origin"
+      ],
+      "properties": {
+        "source_format": {
+          "type": ["string", "null"]
+        },
+        "importer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "imported_at_utc": {
+          "type": ["string", "null"]
+        },
+        "source_files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "path",
+              "format_id",
+              "size_bytes",
+              "sha256"
+            ],
+            "properties": {
+              "role": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "format_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "size_bytes": {
+                "type": ["integer", "null"],
+                "minimum": 0
+              },
+              "sha256": {
+                "type": ["string", "null"]
+              }
+            }
+          }
+        },
+        "canonical_sha256": {
+          "type": ["string", "null"]
+        },
+        "sha256_definition": {
+          "type": ["string", "null"]
+        },
+        "file_size_bytes": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "hash_definitions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "diagnostics": {
+          "type": "object"
+        },
+        "format_metadata": {
+          "type": "object"
+        },
+        "software_versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "metadata_origin": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "numberArray": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    }
+  }
+}
