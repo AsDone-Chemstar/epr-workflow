@@ -116,6 +116,82 @@ def check_output_path(
     return output
 
 
+def atomic_write_bytes(
+    path: str | Path,
+    payload: bytes,
+    *,
+    overwrite: bool = False,
+    protected_paths: Iterable[str | Path] = (),
+) -> Path:
+    """Write binary data through a sibling temporary file and os.replace.
+
+    This is the binary counterpart of :func:`atomic_write_text`. The
+    destination is validated before and immediately before replacement.
+    """
+    if not isinstance(payload, (bytes, bytearray)):
+        raise ExportPathError(
+            "Binary export payload must be bytes.",
+            code="invalid_binary_payload",
+            context={"type": type(payload).__name__},
+        )
+    output = check_output_path(
+        path,
+        overwrite=overwrite,
+        protected_paths=protected_paths,
+    )
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ExportPathError(
+            f"Could not create the output directory: {output.parent}",
+            code="output_directory",
+            context={
+                "path": str(output),
+                "directory": str(output.parent),
+                "error": str(exc),
+            },
+        ) from exc
+
+    temporary: Path | None = None
+    try:
+        descriptor, temp_name = tempfile.mkstemp(
+            prefix=f".{output.name}.",
+            suffix=".tmp",
+            dir=str(output.parent),
+        )
+        temporary = Path(temp_name)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if not overwrite and output.exists():
+            raise OutputExistsError(
+                f"Output appeared while writing: {output}. It was not "
+                "overwritten.",
+                context={"path": str(output)},
+            )
+        os.replace(temporary, output)
+        temporary = None
+        return output
+    except (ExportPathError, OutputExistsError):
+        raise
+    except OSError as exc:
+        raise ExportPathError(
+            f"Could not write the output file: {output}",
+            code="output_write_failed",
+            context={
+                "path": str(output),
+                "error": str(exc),
+            },
+        ) from exc
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+
+
 def atomic_write_text(
     path: str | Path,
     text: str,
@@ -192,4 +268,4 @@ def atomic_write_text(
                 pass
 
 
-__all__ = ["atomic_write_text", "check_output_path"]
+__all__ = ["atomic_write_bytes", "atomic_write_text", "check_output_path"]

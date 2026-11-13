@@ -1,8 +1,8 @@
 """Independent SpectraLab FTIR technique backend.
 
 The package provides strict text import, explicit normalization, baseline
-correction and peak picking. It has no Qt, GUI or legacy ``epr_workflow``
-dependency; GUI presentation lives in the application layer.
+correction, peak picking and difference spectra. It has no Qt, GUI or legacy
+``epr_workflow`` dependency; GUI presentation lives in the application layer.
 """
 
 from spectralab.techniques.ftir.baseline import (
@@ -14,6 +14,24 @@ from spectralab.techniques.ftir.baseline import (
     create_baseline_operation,
     fit_baseline,
     normalize_regions,
+)
+from spectralab.techniques.ftir.difference import (
+    ALGORITHM_EXACT,
+    ALGORITHM_INTERPOLATED,
+    ARITHMETIC_DEFINITION,
+    DIFFERENCE_ALGORITHM_VERSION,
+    DIFFERENCE_AXIS_MATCHES,
+    DIFFERENCE_SOURCES,
+    EXACT_COMPARISON_POLICY,
+    INTERPOLATION_METHOD,
+    INTERPOLATION_POLICY,
+    DifferenceAxisMatch,
+    DifferenceInterpolation,
+    DifferenceParameters,
+    DifferenceResult,
+    DifferenceSource,
+    FTIRDifferenceError,
+    compute_difference,
 )
 from spectralab.techniques.ftir.formats import (
     FTIR_CSV_SUFFIXES,
@@ -71,11 +89,26 @@ __all__ = [
     "ATRCorrectionStatus",
     "AcquisitionMode",
     "ALGORITHM",
+    "ALGORITHM_EXACT",
+    "ALGORITHM_INTERPOLATED",
     "ALGORITHM_VERSION",
+    "DIFFERENCE_ALGORITHM_VERSION",
+    "ARITHMETIC_DEFINITION",
     "BASELINE_DEGREES",
     "BaselineFit",
     "BaselineRegion",
     "ColumnMapping",
+    "DIFFERENCE_AXIS_MATCHES",
+    "DIFFERENCE_SOURCES",
+    "DifferenceAxisMatch",
+    "DifferenceInterpolation",
+    "DifferenceParameters",
+    "DifferenceResult",
+    "DifferenceSource",
+    "EXACT_COMPARISON_POLICY",
+    "FTIRDifferenceError",
+    "INTERPOLATION_METHOD",
+    "INTERPOLATION_POLICY",
     "FTIRBaselineError",
     "FTIRBaselineOperation",
     "FTIR_CSV_SUFFIXES",
@@ -101,6 +134,7 @@ __all__ = [
     "GenericCsvImporter",
     "GenericTXTImporter",
     "GenericTxtImporter",
+    "compute_difference",
     "create_baseline_operation",
     "create_normalization_operation",
     "detect_peak_values",

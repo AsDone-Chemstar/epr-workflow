@@ -239,6 +239,30 @@ def _success_record(
         "import_options": _json_safe(
             spectrum.provenance.format_metadata.get("import_options", {})
         ),
+        "resolved_mapping": _json_safe(
+            spectrum.provenance.format_metadata.get("resolved_mapping", {})
+        ),
+        "parsing": _json_safe(
+            {
+                "delimiter": spectrum.provenance.format_metadata.get(
+                    "delimiter"
+                ),
+                "decimal_separator": spectrum.provenance.format_metadata.get(
+                    "decimal_separator"
+                ),
+                "encoding": spectrum.provenance.format_metadata.get("encoding"),
+                "header": spectrum.provenance.format_metadata.get("header"),
+                "comment_markers": spectrum.provenance.format_metadata.get(
+                    "comment_markers"
+                ),
+                "skip_rows": spectrum.provenance.format_metadata.get("skip_rows"),
+                "defaulted_two_column_mapping": (
+                    spectrum.provenance.format_metadata.get(
+                        "defaulted_two_column_mapping"
+                    )
+                ),
+            }
+        ),
         "outputs": {
             key: str(value.resolve()) for key, value in outputs.items()
         },

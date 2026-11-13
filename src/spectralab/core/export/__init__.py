@@ -30,12 +30,17 @@ from spectralab.core.export.json import (
     render_document_json,
     render_spectrum_json,
 )
-from spectralab.core.export.paths import atomic_write_text, check_output_path
+from spectralab.core.export.paths import (
+    atomic_write_bytes,
+    atomic_write_text,
+    check_output_path,
+)
 from spectralab.core.export.provenance import (
     HASH_DEFINITIONS,
     SCHEMA_STATUS,
     build_metadata_document,
     build_provenance_document,
+    json_compatible,
 )
 
 __all__ = [
@@ -52,12 +57,14 @@ __all__ = [
     "JSON_SCHEMA_VERSION",
     "OutputExistsError",
     "SCHEMA_STATUS",
+    "atomic_write_bytes",
     "atomic_write_text",
     "build_csv_metadata_document",
     "build_export_document",
     "build_metadata_document",
     "build_provenance_document",
     "check_output_path",
+    "json_compatible",
     "export_spectrum_csv",
     "export_spectrum_json",
     "render_csv_metadata_json",

@@ -7,6 +7,7 @@ returned ``Spectrum1D`` through the M5 plotting API. It never processes data.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -36,10 +38,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from spectralab.app.ftir_export import (
+    export_ftir_difference_csv,
+    export_ftir_difference_json,
+    export_ftir_difference_png,
+    export_ftir_spectrum_csv,
+    export_ftir_spectrum_json,
+    export_ftir_spectrum_png,
+)
 from spectralab.app.gui.controller import ApplicationController
 from spectralab.app.gui.ftir_import_dialog import FtirImportDialog
 from spectralab.app.gui.ftir_options_widget import FtirOptionsWidget
 from spectralab.app.gui.i18n import Translator
+from spectralab.core.errors import ExportSerializationError
 from spectralab.core.model import Axis1D, Signal1D, Spectrum1D
 from spectralab.core.plotting import (
     PlotConfig,
@@ -55,8 +66,13 @@ from spectralab.core.processing import (
 )
 from spectralab.techniques.ftir import (
     BaselineRegion,
+    DIFFERENCE_AXIS_MATCHES,
+    DIFFERENCE_SOURCES,
+    DifferenceParameters,
+    DifferenceResult,
     FTIRBaselineError,
     FTIRBaselineOperation,
+    FTIRDifferenceError,
     FTIRImportOptions,
     NORMALIZATION_METHODS,
     PEAK_POLARITIES,
@@ -64,6 +80,7 @@ from spectralab.techniques.ftir import (
     PeakDetectionError,
     PeakDetectionParameters,
     PeakDetectionResult,
+    compute_difference,
     create_baseline_operation,
     create_normalization_operation,
     detect_peaks,
@@ -92,6 +109,39 @@ _PEAK_POLARITY_KEYS = {
     "negative": "ftir.peak_negative",
     "both": "ftir.peak_both",
 }
+_DIFFERENCE_SOURCE_KEYS = {
+    "raw": "ftir.peak_source_raw",
+    "processed": "ftir.peak_source_processed",
+}
+_DIFFERENCE_AXIS_MATCH_KEYS = {
+    "exact": "ftir.difference_exact",
+    "interpolate": "ftir.difference_interpolate",
+}
+_EXPORT_FORMATS = ("csv", "json", "png")
+_EXPORT_FORMAT_KEYS = {
+    "csv": "ftir.export_format_csv",
+    "json": "ftir.export_format_json",
+    "png": "ftir.export_format_png",
+}
+_EXPORT_FORMAT_FILTERS = {
+    "csv": "CSV (*.csv)",
+    "json": "JSON (*.json)",
+    "png": "PNG (*.png)",
+}
+
+
+@dataclass
+class _FtirWorkspace:
+    """One imported FTIR spectrum with its own independent processing session."""
+
+    key: str
+    path: Path
+    spectrum: Spectrum1D
+    session: ProcessingSession
+    options: FTIRImportOptions
+    warnings: tuple[str, ...]
+    display: Spectrum1D | ProcessedSpectrum
+    baseline_regions: tuple[BaselineRegion, ...] = ()
 
 
 class FtirPanel(QWidget):
@@ -119,6 +169,14 @@ class FtirPanel(QWidget):
         self._baseline_regions: list[BaselineRegion] = []
         self._peak_preview_result: PeakDetectionResult | None = None
         self._peak_applied_result: PeakDetectionResult | None = None
+        self._difference_preview_result: DifferenceResult | None = None
+        self._difference_applied_result: DifferenceResult | None = None
+        self._difference_preview_workspaces: tuple[str, str] | None = None
+        self._difference_applied_workspaces: tuple[str, str] | None = None
+        self._plot_mode = "normal"
+        self._workspaces: list[_FtirWorkspace] = []
+        self._active_key: str | None = None
+        self._workspace_counter = 0
         self._path: Path | None = None
         self._warnings: tuple[str, ...] = ()
         self._dialog: FtirImportDialog | None = None
@@ -132,6 +190,13 @@ class FtirPanel(QWidget):
         layout = QVBoxLayout(self)
 
         file_row = QHBoxLayout()
+        self.dataset_label = QLabel()
+        file_row.addWidget(self.dataset_label)
+        self.dataset_combo = QComboBox()
+        self.dataset_combo.currentIndexChanged.connect(
+            self._on_dataset_selected
+        )
+        file_row.addWidget(self.dataset_combo, 1)
         self.file_label = QLabel()
         self.file_label.setWordWrap(True)
         file_row.addWidget(self.file_label, 1)
@@ -272,6 +337,15 @@ class FtirPanel(QWidget):
         self.peak_tab = QWidget()
         self._build_peak_tab(self.peak_tab)
         self.bottom_tabs.addTab(self.peak_tab, "")
+
+        self.difference_tab = QWidget()
+        self._build_difference_tab(self.difference_tab)
+        self.bottom_tabs.addTab(self.difference_tab, "")
+
+        self.export_tab = QWidget()
+        self._build_export_tab(self.export_tab)
+        self.bottom_tabs.addTab(self.export_tab, "")
+        self.bottom_tabs.currentChanged.connect(self._on_bottom_tab_changed)
         splitter.addWidget(self.bottom_tabs)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
@@ -363,8 +437,131 @@ class FtirPanel(QWidget):
         )
         layout.addWidget(self.peak_table, 1)
 
+    def _build_difference_tab(self, parent: QWidget) -> None:
+        layout = QVBoxLayout(parent)
+        layout.setContentsMargins(4, 4, 4, 4)
+        form = QFormLayout()
+
+        self.difference_a_label = QLabel()
+        self.difference_a_combo = QComboBox()
+        self.difference_a_combo.currentIndexChanged.connect(
+            self._on_difference_a_changed
+        )
+        form.addRow(self.difference_a_label, self.difference_a_combo)
+
+        self.difference_b_label = QLabel()
+        self.difference_b_combo = QComboBox()
+        self.difference_b_combo.currentIndexChanged.connect(
+            self._on_difference_parameters_changed
+        )
+        form.addRow(self.difference_b_label, self.difference_b_combo)
+
+        self.difference_source_a_label = QLabel()
+        self.difference_source_a_combo = QComboBox()
+        for source in DIFFERENCE_SOURCES:
+            self.difference_source_a_combo.addItem("", source)
+        self.difference_source_a_combo.currentIndexChanged.connect(
+            self._on_difference_parameters_changed
+        )
+        form.addRow(self.difference_source_a_label, self.difference_source_a_combo)
+
+        self.difference_source_b_label = QLabel()
+        self.difference_source_b_combo = QComboBox()
+        for source in DIFFERENCE_SOURCES:
+            self.difference_source_b_combo.addItem("", source)
+        self.difference_source_b_combo.currentIndexChanged.connect(
+            self._on_difference_parameters_changed
+        )
+        form.addRow(self.difference_source_b_label, self.difference_source_b_combo)
+
+        self.difference_axis_match_label = QLabel()
+        self.difference_axis_match_combo = QComboBox()
+        for mode in DIFFERENCE_AXIS_MATCHES:
+            self.difference_axis_match_combo.addItem("", mode)
+        self.difference_axis_match_combo.currentIndexChanged.connect(
+            self._on_difference_parameters_changed
+        )
+        form.addRow(
+            self.difference_axis_match_label,
+            self.difference_axis_match_combo,
+        )
+        layout.addLayout(form)
+
+        self.difference_target_label = QLabel()
+        self.difference_target_label.setWordWrap(True)
+        layout.addWidget(self.difference_target_label)
+
+        actions = QHBoxLayout()
+        self.difference_preview_button = QPushButton()
+        self.difference_preview_button.clicked.connect(self._preview_difference)
+        self.difference_apply_button = QPushButton()
+        self.difference_apply_button.clicked.connect(self._apply_difference)
+        self.difference_clear_button = QPushButton()
+        self.difference_clear_button.clicked.connect(self._clear_difference_results)
+        actions.addWidget(self.difference_preview_button)
+        actions.addWidget(self.difference_apply_button)
+        actions.addWidget(self.difference_clear_button)
+        layout.addLayout(actions)
+
+        self.difference_status_label = QLabel()
+        self.difference_status_label.setWordWrap(True)
+        layout.addWidget(self.difference_status_label)
+        self.difference_parameter_label = QLabel()
+        self.difference_parameter_label.setWordWrap(True)
+        layout.addWidget(self.difference_parameter_label)
+        self.difference_warning_label = QLabel()
+        self.difference_warning_label.setWordWrap(True)
+        layout.addWidget(self.difference_warning_label)
+
+        export_row = QHBoxLayout()
+        self.difference_export_format_label = QLabel()
+        export_row.addWidget(self.difference_export_format_label)
+        self.difference_export_format_combo = QComboBox()
+        for export_format in _EXPORT_FORMATS:
+            self.difference_export_format_combo.addItem("", export_format)
+        export_row.addWidget(self.difference_export_format_combo)
+        self.difference_export_overwrite_check = QCheckBox()
+        export_row.addWidget(self.difference_export_overwrite_check)
+        self.difference_export_button = QPushButton()
+        self.difference_export_button.clicked.connect(self._export_difference)
+        export_row.addWidget(self.difference_export_button)
+        layout.addLayout(export_row)
+        self.difference_export_status_label = QLabel()
+        self.difference_export_status_label.setWordWrap(True)
+        layout.addWidget(self.difference_export_status_label)
+        layout.addStretch(1)
+
+    def _build_export_tab(self, parent: QWidget) -> None:
+        layout = QVBoxLayout(parent)
+        layout.setContentsMargins(4, 4, 4, 4)
+        form = QFormLayout()
+        self.export_source_label = QLabel()
+        self.export_source_combo = QComboBox()
+        for source in DIFFERENCE_SOURCES:
+            self.export_source_combo.addItem("", source)
+        form.addRow(self.export_source_label, self.export_source_combo)
+
+        self.export_format_label = QLabel()
+        self.export_format_combo = QComboBox()
+        for export_format in _EXPORT_FORMATS:
+            self.export_format_combo.addItem("", export_format)
+        form.addRow(self.export_format_label, self.export_format_combo)
+        layout.addLayout(form)
+
+        self.export_overwrite_check = QCheckBox()
+        layout.addWidget(self.export_overwrite_check)
+        self.export_button = QPushButton()
+        self.export_button.clicked.connect(self._export_spectrum)
+        layout.addWidget(self.export_button)
+        self.export_status_label = QLabel()
+        self.export_status_label.setWordWrap(True)
+        layout.addWidget(self.export_status_label)
+        layout.addStretch(1)
+
     # ------------------------------------------------------------- language
     def retranslate(self) -> None:
+        self.dataset_label.setText(self._t("ftir.dataset_selector"))
+        self._sync_dataset_combo()
         self.file_label.setText(
             self._t("ftir.file_none")
             if self._path is None
@@ -393,6 +590,8 @@ class FtirPanel(QWidget):
         self._refresh_region_list()
         self.bottom_tabs.setTabText(0, self._t("ftir.tab_import_options"))
         self.bottom_tabs.setTabText(1, self._t("ftir.tab_peak_picking"))
+        self.bottom_tabs.setTabText(2, self._t("ftir.tab_difference"))
+        self.bottom_tabs.setTabText(3, self._t("ftir.tab_export"))
         self.peak_source_label.setText(self._t("ftir.peak_source"))
         self._retranslate_peak_sources()
         self.peak_polarity_label.setText(self._t("ftir.peak_polarity"))
@@ -410,6 +609,45 @@ class FtirPanel(QWidget):
         self.peak_clear_button.setText(self._t("ftir.peak_clear"))
         self._update_peak_table()
         self._update_peak_controls()
+        self.difference_a_label.setText(self._t("ftir.difference_a"))
+        self.difference_b_label.setText(self._t("ftir.difference_b"))
+        self.difference_source_a_label.setText(
+            self._t("ftir.difference_source_a")
+        )
+        self.difference_source_b_label.setText(
+            self._t("ftir.difference_source_b")
+        )
+        self.difference_axis_match_label.setText(
+            self._t("ftir.difference_axis_match")
+        )
+        self._retranslate_difference_sources()
+        self._retranslate_difference_axis_matches()
+        self.difference_target_label.setText(
+            self._t("ftir.difference_target_note")
+        )
+        self.difference_preview_button.setText(
+            self._t("ftir.difference_preview")
+        )
+        self.difference_apply_button.setText(self._t("ftir.difference_apply"))
+        self.difference_clear_button.setText(self._t("ftir.difference_clear"))
+        self.difference_export_format_label.setText(
+            self._t("ftir.export_format")
+        )
+        self._retranslate_export_formats()
+        self.difference_export_overwrite_check.setText(
+            self._t("ftir.export_overwrite")
+        )
+        self.difference_export_button.setText(
+            self._t("ftir.difference_export_button")
+        )
+        self.export_source_label.setText(self._t("ftir.export_source"))
+        self.export_format_label.setText(self._t("ftir.export_format"))
+        self.export_overwrite_check.setText(self._t("ftir.export_overwrite"))
+        self.export_button.setText(self._t("ftir.export_spectrum_button"))
+        self._retranslate_export_sources()
+        self._populate_difference_selectors()
+        self._update_difference_panel()
+        self._update_export_controls()
         self.preview_button.setText(self._t("ftir.preview"))
         self.apply_button.setText(self._t("ftir.apply"))
         self.cancel_preview_button.setText(self._t("ftir.cancel_preview"))
@@ -478,6 +716,67 @@ class FtirPanel(QWidget):
         if index >= 0:
             self.peak_polarity_combo.setCurrentIndex(index)
         self.peak_polarity_combo.blockSignals(False)
+
+    def _retranslate_difference_sources(self) -> None:
+        for combo in (
+            self.difference_source_a_combo,
+            self.difference_source_b_combo,
+        ):
+            current = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            for source in DIFFERENCE_SOURCES:
+                combo.addItem(self._t(_DIFFERENCE_SOURCE_KEYS[source]), source)
+            index = combo.findData(current)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+
+    def _retranslate_difference_axis_matches(self) -> None:
+        current = self.difference_axis_match_combo.currentData()
+        self.difference_axis_match_combo.blockSignals(True)
+        self.difference_axis_match_combo.clear()
+        for mode in DIFFERENCE_AXIS_MATCHES:
+            self.difference_axis_match_combo.addItem(
+                self._t(_DIFFERENCE_AXIS_MATCH_KEYS[mode]),
+                mode,
+            )
+        index = self.difference_axis_match_combo.findData(current)
+        if index >= 0:
+            self.difference_axis_match_combo.setCurrentIndex(index)
+        self.difference_axis_match_combo.blockSignals(False)
+
+    def _retranslate_export_formats(self) -> None:
+        for combo in (
+            self.export_format_combo,
+            self.difference_export_format_combo,
+        ):
+            current = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            for export_format in _EXPORT_FORMATS:
+                combo.addItem(
+                    self._t(_EXPORT_FORMAT_KEYS[export_format]),
+                    export_format,
+                )
+            index = combo.findData(current)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+
+    def _retranslate_export_sources(self) -> None:
+        current = self.export_source_combo.currentData()
+        self.export_source_combo.blockSignals(True)
+        self.export_source_combo.clear()
+        for source in DIFFERENCE_SOURCES:
+            self.export_source_combo.addItem(
+                self._t(_DIFFERENCE_SOURCE_KEYS[source]),
+                source,
+            )
+        index = self.export_source_combo.findData(current)
+        if index >= 0:
+            self.export_source_combo.setCurrentIndex(index)
+        self.export_source_combo.blockSignals(False)
 
     def _retranslate_baseline_algorithms(self) -> None:
         current = self.baseline_algorithm.currentData()
@@ -556,19 +855,34 @@ class FtirPanel(QWidget):
             )
             return False
 
-        self._source = loaded.spectrum
-        self._display = loaded.spectrum
-        self._session = ProcessingSession(loaded.spectrum)
-        self._preview_output = None
-        self._preview_operation = None
-        self._preview_baseline_values = None
-        self._preview_fit = None
-        self._baseline_regions.clear()
-        self._path = source_path
-        self._warnings = tuple(loaded.dataset.warnings)
-        self._clear_peak_results_silent()
+        self._workspace_counter += 1
+        existing = next(
+            (item for item in self._workspaces if item.path == source_path),
+            None,
+        )
+        key = (
+            existing.key
+            if existing is not None
+            else f"ftir-workspace-{self._workspace_counter}"
+        )
+        workspace = _FtirWorkspace(
+            key=key,
+            path=source_path,
+            spectrum=loaded.spectrum,
+            session=ProcessingSession(loaded.spectrum),
+            options=options,
+            warnings=tuple(loaded.dataset.warnings),
+            display=loaded.spectrum,
+        )
+        if existing is not None:
+            self._workspaces[self._workspaces.index(existing)] = workspace
+        else:
+            self._workspaces.append(workspace)
+        self._clear_difference_results_silent()
+        self.export_status_label.clear()
+        self.difference_export_status_label.clear()
+        self._activate_workspace(workspace, reset=True)
         self.options_widget.set_effective_metadata(loaded.spectrum)
-        self._update_display_controls(reset=True)
         self._update_action_state()
         self.retranslate()
         self.spectrum_changed.emit(loaded.spectrum)
@@ -597,6 +911,94 @@ class FtirPanel(QWidget):
                 }
             )
         return True
+
+    def _workspace_label(self, workspace: _FtirWorkspace) -> str:
+        return self._t(
+            "ftir.dataset_item",
+            name=workspace.path.name,
+            dataset_id=workspace.spectrum.dataset_id,
+        )
+
+    def _workspace_by_key(self, key: str | None) -> _FtirWorkspace | None:
+        if key is None:
+            return None
+        return next(
+            (item for item in self._workspaces if item.key == key),
+            None,
+        )
+
+    def _active_workspace(self) -> _FtirWorkspace | None:
+        return self._workspace_by_key(self._active_key)
+
+    def _store_active_workspace(self) -> None:
+        workspace = self._active_workspace()
+        if workspace is None:
+            return
+        workspace.display = self._display
+        workspace.baseline_regions = tuple(self._baseline_regions)
+
+    def _sync_dataset_combo(self) -> None:
+        current = self._active_key
+        self.dataset_combo.blockSignals(True)
+        self.dataset_combo.clear()
+        for workspace in self._workspaces:
+            self.dataset_combo.addItem(
+                self._workspace_label(workspace),
+                workspace.key,
+            )
+        index = self.dataset_combo.findData(current)
+        if index >= 0:
+            self.dataset_combo.setCurrentIndex(index)
+        self.dataset_combo.blockSignals(False)
+        self.dataset_combo.setEnabled(bool(self._workspaces))
+
+    def _activate_workspace(
+        self,
+        workspace: _FtirWorkspace,
+        *,
+        reset: bool,
+    ) -> None:
+        self._active_key = workspace.key
+        self._source = workspace.spectrum
+        self._session = workspace.session
+        self._display = workspace.display
+        self._path = workspace.path
+        self._warnings = workspace.warnings
+        self._baseline_regions = list(workspace.baseline_regions)
+        self._clear_preview()
+        self._clear_peak_results_silent()
+        self._plot_mode = "normal"
+        self.export_status_label.clear()
+        self.difference_export_status_label.clear()
+        self.options_widget.set_options(workspace.options)
+        self._sync_dataset_combo()
+        self._update_display_controls(reset=reset)
+        self._refresh_region_list()
+        self._update_action_state()
+        self._populate_difference_selectors()
+        self._update_difference_panel()
+
+    def _on_dataset_selected(self, index: int) -> None:
+        key = self.dataset_combo.itemData(index)
+        if not isinstance(key, str) or key == self._active_key:
+            return
+        workspace = self._workspace_by_key(key)
+        if workspace is None:
+            return
+        self._store_active_workspace()
+        self._clear_preview()
+        self._clear_peak_results_silent()
+        self._plot_mode = "normal"
+        self._activate_workspace(workspace, reset=False)
+        self.retranslate()
+        self.spectrum_changed.emit(self._display)
+        self.status_event.emit(
+            {
+                "level": "info",
+                "key": "ftir.dataset_switched",
+                "params": {"name": workspace.path.name},
+            }
+        )
 
     def _emit_options_error(self, exc: Exception) -> None:
         self.status_event.emit(
@@ -640,11 +1042,23 @@ class FtirPanel(QWidget):
             self.axes.clear()
             self.canvas.draw_idle()
             return
-        if self._preview_output is None:
-            peak_result = self._peak_preview_result or self._peak_applied_result
+        if self._plot_mode == "difference":
+            difference_result = (
+                self._difference_preview_result
+                or self._difference_applied_result
+            )
+            if difference_result is not None:
+                self._draw_difference_result(difference_result)
+                return
+            self._plot_mode = "normal"
+        elif self._plot_mode == "peak":
+            peak_result = (
+                self._peak_preview_result or self._peak_applied_result
+            )
             if peak_result is not None:
                 self._draw_peak_result(peak_result)
                 return
+            self._plot_mode = "normal"
         title = self._source.metadata.title or self._source.dataset_id
         config = PlotConfig(
             title=title,
@@ -653,7 +1067,7 @@ class FtirPanel(QWidget):
             raw_label=self._t("ftir.raw_label"),
             processed_label=self._processed_label(),
         )
-        if self._preview_output is not None:
+        if self._plot_mode == "processing" and self._preview_output is not None:
             raw_series = series_from_spectrum(
                 self._source,
                 label=self._t("ftir.raw_label"),
@@ -774,6 +1188,111 @@ class FtirPanel(QWidget):
             self.axes.set_xlim(x_max, x_min)
         self.canvas.draw_idle()
 
+    def _difference_source_arrays(
+        self,
+        workspace: _FtirWorkspace,
+        source: str,
+    ) -> tuple[Axis1D, Signal1D]:
+        if source == "raw":
+            return workspace.spectrum.axis, workspace.spectrum.raw_signal
+        current = workspace.session.current
+        return current.axis, current.signal
+
+    def _draw_difference_result(self, result: DifferenceResult) -> None:
+        keys = (
+            self._difference_preview_workspaces
+            if result is self._difference_preview_result
+            else self._difference_applied_workspaces
+        )
+        workspace_a = self._workspace_by_key(keys[0]) if keys else None
+        workspace_b = self._workspace_by_key(keys[1]) if keys else None
+
+        self.axes.clear()
+        if workspace_a is not None:
+            axis_a, signal_a = self._difference_source_arrays(
+                workspace_a,
+                result.source_a,
+            )
+            self.axes.plot(
+                axis_a.values,
+                signal_a.values,
+                color="#1f77b4",
+                linewidth=1.1,
+                linestyle="-",
+                label=self._t(
+                    "ftir.difference_plot_a",
+                    name=workspace_a.path.name,
+                ),
+            )
+        if workspace_b is not None:
+            axis_b, signal_b = self._difference_source_arrays(
+                workspace_b,
+                result.source_b,
+            )
+            self.axes.plot(
+                axis_b.values,
+                signal_b.values,
+                color="#ff7f0e",
+                linewidth=1.1,
+                linestyle="-",
+                label=self._t(
+                    "ftir.difference_plot_b",
+                    name=workspace_b.path.name,
+                ),
+            )
+        if result.interpolation is not None:
+            self.axes.plot(
+                result.axis.values,
+                result.interpolation.aligned_b_signal.values,
+                color="#8c564b",
+                linewidth=1.0,
+                linestyle="--",
+                label=self._t("ftir.difference_plot_b_interpolated"),
+            )
+        self.axes.plot(
+            result.axis.values,
+            result.signal.values,
+            color="#2e7d32",
+            linewidth=1.8,
+            linestyle="-",
+            label=self._t("ftir.difference_plot_difference"),
+        )
+        self.axes.set_title(self._t("ftir.difference_plot_title"))
+        self.axes.set_xlabel(self._axis_label(result.axis))
+        self.axes.set_ylabel(self._signal_label(result.signal))
+        self.axes.grid(
+            True,
+            which="major",
+            color="#b0b0b0",
+            alpha=0.35,
+            linewidth=0.6,
+        )
+        self.axes.legend(loc="best", frameon=False)
+        if (
+            self.invert_axis_check.isChecked()
+            and result.axis.quantity == "wavenumber"
+        ):
+            x_min = float(result.axis.values.min())
+            x_max = float(result.axis.values.max())
+            self.axes.set_xlim(x_max, x_min)
+        self.canvas.draw_idle()
+
+    def _on_bottom_tab_changed(self, index: int) -> None:
+        widget = self.bottom_tabs.widget(index)
+        if widget is self.difference_tab and self.difference_result is not None:
+            self._plot_mode = "difference"
+        elif widget is self.peak_tab and (
+            self._peak_preview_result is not None
+            or self._peak_applied_result is not None
+        ):
+            self._plot_mode = "peak"
+        elif self._preview_output is not None:
+            self._plot_mode = "processing"
+        else:
+            self._plot_mode = "normal"
+        if self._source is not None:
+            self._draw()
+
     def _on_display_direction_toggled(self, _checked: bool) -> None:
         if self._source is not None:
             self._draw()
@@ -847,6 +1366,8 @@ class FtirPanel(QWidget):
     def _invalidate_preview(self) -> None:
         if self._preview_output is not None:
             self._clear_preview()
+            if self._plot_mode == "processing":
+                self._plot_mode = "normal"
             if self._source is not None:
                 self._draw()
             self.status_event.emit(
@@ -900,6 +1421,7 @@ class FtirPanel(QWidget):
             )
             return
         self._baseline_regions = list(updated)
+        self._store_active_workspace()
         self.region_start.blockSignals(True)
         self.region_end.blockSignals(True)
         self.region_start.clear()
@@ -920,6 +1442,7 @@ class FtirPanel(QWidget):
         if row < 0 or row >= len(self._baseline_regions):
             row = len(self._baseline_regions) - 1
         self._baseline_regions.pop(row)
+        self._store_active_workspace()
         self._refresh_region_list()
         self._invalidate_preview()
         self._update_fit_info()
@@ -1002,6 +1525,7 @@ class FtirPanel(QWidget):
             return
         self._preview_output = output
         self._preview_operation = operation
+        self._plot_mode = "processing"
         self._draw()
         self._update_fit_info()
         self._update_action_state()
@@ -1029,8 +1553,11 @@ class FtirPanel(QWidget):
             self._report_processing_error(exc)
             return
         self._display = display
+        self._store_active_workspace()
         self._clear_preview()
         self._clear_peak_results_silent()
+        self._clear_difference_results_silent()
+        self._plot_mode = "normal"
         self._draw()
         self._update_fit_info()
         self._update_action_state()
@@ -1061,6 +1588,8 @@ class FtirPanel(QWidget):
         if self._preview_output is None:
             return
         self._clear_preview()
+        if self._plot_mode == "processing":
+            self._plot_mode = "normal"
         self._draw()
         self._update_action_state()
         self.status_event.emit(
@@ -1090,7 +1619,10 @@ class FtirPanel(QWidget):
 
     def _commit_result(self, result: ProcessedSpectrum, status_key: str) -> None:
         self._display = self._source if result.is_original else result
+        self._store_active_workspace()
         self._clear_peak_results_silent()
+        self._clear_difference_results_silent()
+        self._plot_mode = "normal"
         self._draw()
         self._update_action_state()
         self.spectrum_changed.emit(self._display)
@@ -1141,6 +1673,7 @@ class FtirPanel(QWidget):
         )
         self._refresh_region_list()
         self._update_state_label()
+        self._update_export_controls()
 
     def _update_state_label(self) -> None:
         count = len(self._session.history) if self._session is not None else 0
@@ -1253,6 +1786,7 @@ class FtirPanel(QWidget):
             self._update_action_state()
             self._update_fit_info()
         self._peak_preview_result = result
+        self._plot_mode = "peak"
         self._update_peak_table()
         self._update_peak_controls()
         self._draw()
@@ -1276,6 +1810,7 @@ class FtirPanel(QWidget):
         result = self._peak_preview_result
         self._peak_applied_result = result
         self._peak_preview_result = None
+        self._plot_mode = "peak"
         self._update_peak_table()
         self._update_peak_controls()
         self._draw()
@@ -1297,6 +1832,8 @@ class FtirPanel(QWidget):
         ):
             return
         self._clear_peak_results_silent()
+        if self._plot_mode == "peak":
+            self._plot_mode = "normal"
         if self._source is not None:
             self._draw()
         self.status_event.emit(
@@ -1320,6 +1857,11 @@ class FtirPanel(QWidget):
         had_preview = self._peak_preview_result is not None
         if had_preview:
             self._peak_preview_result = None
+            self._plot_mode = (
+                "peak"
+                if self._peak_applied_result is not None
+                else "normal"
+            )
             self._update_peak_table()
             self._update_peak_controls()
             if self._source is not None:
@@ -1451,9 +1993,754 @@ class FtirPanel(QWidget):
         self.peak_clear_button.setEnabled(has_source and has_result)
         self.peak_table.setEnabled(has_source)
 
+    # ------------------------------------------------------------ difference
+    def _difference_source_value(self, combo: QComboBox) -> str:
+        return str(combo.currentData() or "raw")
+
+    def _difference_axis_match_value(self) -> str:
+        return str(self.difference_axis_match_combo.currentData() or "exact")
+
+    def _difference_axis_match_label(self, value: str | None = None) -> str:
+        return self._t(
+            _DIFFERENCE_AXIS_MATCH_KEYS[value or self._difference_axis_match_value()]
+        )
+
+    def _difference_source_label(self, value: str) -> str:
+        return self._t(_DIFFERENCE_SOURCE_KEYS[value])
+
+    def _populate_difference_selectors(self) -> None:
+        a_key = self.difference_a_combo.currentData()
+        if self._workspace_by_key(a_key) is None:
+            a_key = self._workspaces[0].key if self._workspaces else None
+        a_workspace = self._workspace_by_key(a_key)
+
+        self.difference_a_combo.blockSignals(True)
+        self.difference_a_combo.clear()
+        for workspace in self._workspaces:
+            self.difference_a_combo.addItem(
+                self._workspace_label(workspace),
+                workspace.key,
+            )
+        index = self.difference_a_combo.findData(a_key)
+        if index >= 0:
+            self.difference_a_combo.setCurrentIndex(index)
+        self.difference_a_combo.blockSignals(False)
+
+        b_key = self.difference_b_combo.currentData()
+        b_workspace = self._workspace_by_key(b_key)
+        if (
+            b_workspace is None
+            or a_workspace is None
+            or b_workspace.key == a_workspace.key
+            or b_workspace.spectrum.dataset_id
+            == a_workspace.spectrum.dataset_id
+        ):
+            b_key = None
+        if b_key is None and a_workspace is not None:
+            candidate = next(
+                (
+                    workspace
+                    for workspace in self._workspaces
+                    if workspace.key != a_workspace.key
+                    and workspace.spectrum.dataset_id
+                    != a_workspace.spectrum.dataset_id
+                ),
+                None,
+            )
+            if candidate is not None:
+                b_key = candidate.key
+
+        self.difference_b_combo.blockSignals(True)
+        self.difference_b_combo.clear()
+        for workspace in self._workspaces:
+            if a_workspace is not None and (
+                workspace.key == a_workspace.key
+                or workspace.spectrum.dataset_id
+                == a_workspace.spectrum.dataset_id
+            ):
+                continue
+            self.difference_b_combo.addItem(
+                self._workspace_label(workspace),
+                workspace.key,
+            )
+        index = self.difference_b_combo.findData(b_key)
+        if index >= 0:
+            self.difference_b_combo.setCurrentIndex(index)
+        self.difference_b_combo.blockSignals(False)
+        self._update_difference_panel()
+
+    def _on_difference_a_changed(self, _index: int = 0) -> None:
+        self._populate_difference_selectors()
+        self._on_difference_parameters_changed()
+
+    def _on_difference_parameters_changed(self, _value=None) -> None:
+        had_preview = self._difference_preview_result is not None
+        if had_preview:
+            self._difference_preview_result = None
+            self._difference_preview_workspaces = None
+            if self._difference_applied_result is not None:
+                self._plot_mode = "difference"
+            elif self._plot_mode == "difference":
+                self._plot_mode = "normal"
+            if self._source is not None:
+                self._draw()
+            self.status_event.emit(
+                {
+                    "level": "info",
+                    "key": "ftir.difference_preview_cancelled",
+                }
+            )
+        self._update_difference_panel()
+
+    def _build_difference_parameters(self) -> DifferenceParameters:
+        return DifferenceParameters(
+            axis_match=self._difference_axis_match_value(),
+            source_a=self._difference_source_value(
+                self.difference_source_a_combo
+            ),
+            source_b=self._difference_source_value(
+                self.difference_source_b_combo
+            ),
+        )
+
+    def _difference_source_data(
+        self,
+        workspace_combo: QComboBox,
+        source_combo: QComboBox,
+    ):
+        key = workspace_combo.currentData()
+        workspace = self._workspace_by_key(key)
+        if workspace is None:
+            raise FTIRDifferenceError(
+                self._t("ftir.difference_select_spectra"),
+                code="ftir_difference_selection",
+            )
+        source = self._difference_source_value(source_combo)
+        if source == "raw":
+            return (
+                workspace,
+                source,
+                workspace.spectrum.axis,
+                workspace.spectrum.raw_signal,
+                (),
+            )
+        current = workspace.session.current
+        return (
+            workspace,
+            source,
+            current.axis,
+            current.signal,
+            tuple(record.operation_id for record in workspace.session.history),
+        )
+
+    def _preview_difference(self) -> None:
+        try:
+            parameters = self._build_difference_parameters()
+            workspace_a, source_a, axis_a, signal_a, history_a = (
+                self._difference_source_data(
+                    self.difference_a_combo,
+                    self.difference_source_a_combo,
+                )
+            )
+            workspace_b, source_b, axis_b, signal_b, history_b = (
+                self._difference_source_data(
+                    self.difference_b_combo,
+                    self.difference_source_b_combo,
+                )
+            )
+            result = compute_difference(
+                axis_a,
+                signal_a,
+                axis_b,
+                signal_b,
+                parameters,
+                dataset_a_id=workspace_a.spectrum.dataset_id,
+                dataset_b_id=workspace_b.spectrum.dataset_id,
+                source_operation_history_a=history_a,
+                source_operation_history_b=history_b,
+            )
+        except Exception as exc:
+            self._report_difference_error(exc)
+            return
+
+        if self._preview_output is not None:
+            self._clear_preview()
+        self._clear_peak_preview_silent()
+        self._difference_preview_result = result
+        self._difference_preview_workspaces = (
+            workspace_a.key,
+            workspace_b.key,
+        )
+        self._plot_mode = "difference"
+        self._update_difference_panel()
+        self._draw()
+        self.status_event.emit(
+            {
+                "level": "info",
+                "key": "ftir.difference_preview_ready",
+                "params": {
+                    "points": result.point_count,
+                    "axis_match": self._difference_axis_match_label(
+                        result.axis_match
+                    ),
+                },
+            }
+        )
+
+    def _apply_difference(self) -> None:
+        if self._difference_preview_result is None:
+            self.status_event.emit(
+                {
+                    "level": "error",
+                    "key": "ftir.difference_preview_required",
+                }
+            )
+            return
+        result = self._difference_preview_result
+        keys = self._difference_preview_workspaces
+        self._difference_applied_result = result
+        self._difference_applied_workspaces = keys
+        self._difference_preview_result = None
+        self._difference_preview_workspaces = None
+        self._plot_mode = "difference"
+        self._update_difference_panel()
+        self._draw()
+        self.status_event.emit(
+            {
+                "level": "success",
+                "key": "ftir.difference_applied",
+                "params": {
+                    "points": result.point_count,
+                    "axis_match": self._difference_axis_match_label(
+                        result.axis_match
+                    ),
+                },
+            }
+        )
+
+    def _clear_difference_results(self) -> None:
+        if (
+            self._difference_preview_result is None
+            and self._difference_applied_result is None
+        ):
+            return
+        self._clear_difference_results_silent()
+        if self._plot_mode == "difference":
+            self._plot_mode = "normal"
+        if self._source is not None:
+            self._draw()
+        self.status_event.emit(
+            {"level": "info", "key": "ftir.difference_cleared"}
+        )
+
+    def _clear_difference_results_silent(self) -> None:
+        self._difference_preview_result = None
+        self._difference_applied_result = None
+        self._difference_preview_workspaces = None
+        self._difference_applied_workspaces = None
+        if self._plot_mode == "difference":
+            self._plot_mode = "normal"
+        self._update_difference_panel()
+
+    def _update_difference_panel(self) -> None:
+        result = (
+            self._difference_preview_result
+            or self._difference_applied_result
+        )
+        self._update_export_controls()
+        has_workspaces = bool(self._workspaces)
+        has_two = (
+            len(self._workspaces) >= 2
+            and self.difference_b_combo.count() > 0
+        )
+        for widget in (
+            self.difference_a_combo,
+            self.difference_b_combo,
+            self.difference_source_a_combo,
+            self.difference_source_b_combo,
+            self.difference_axis_match_combo,
+        ):
+            widget.setEnabled(has_workspaces)
+        self.difference_preview_button.setEnabled(has_two)
+        self.difference_apply_button.setEnabled(
+            self._difference_preview_result is not None
+        )
+        self.difference_clear_button.setEnabled(result is not None)
+        if result is None:
+            self.difference_status_label.setText(
+                self._t("ftir.difference_no_result")
+            )
+            self.difference_parameter_label.clear()
+            self.difference_warning_label.clear()
+            self.difference_warning_label.setToolTip("")
+            self.difference_export_status_label.clear()
+            return
+
+        is_preview = self._difference_preview_result is result
+        keys = (
+            self._difference_preview_workspaces
+            if is_preview
+            else self._difference_applied_workspaces
+        )
+        workspace_a = self._workspace_by_key(keys[0]) if keys else None
+        workspace_b = self._workspace_by_key(keys[1]) if keys else None
+        name_a = (
+            workspace_a.path.name
+            if workspace_a is not None
+            else result.dataset_a_id
+        )
+        name_b = (
+            workspace_b.path.name
+            if workspace_b is not None
+            else result.dataset_b_id
+        )
+        self.difference_status_label.setText(
+            self._t(
+                (
+                    "ftir.difference_preview_summary"
+                    if is_preview
+                    else "ftir.difference_applied_summary"
+                ),
+                a=name_a,
+                b=name_b,
+                axis_match=self._difference_axis_match_label(
+                    result.axis_match
+                ),
+                points=result.point_count,
+            )
+        )
+        self.difference_parameter_label.setText(
+            self._t(
+                "ftir.difference_parameter_summary",
+                source_a=self._difference_source_label(result.source_a),
+                source_b=self._difference_source_label(result.source_b),
+                axis_match=self._difference_axis_match_label(
+                    result.axis_match
+                ),
+            )
+        )
+        if result.warnings:
+            self.difference_warning_label.setText(
+                self._t(
+                    "ftir.difference_warnings",
+                    warnings="; ".join(result.warnings),
+                )
+            )
+        else:
+            self.difference_warning_label.clear()
+        self.difference_warning_label.setToolTip(
+            "; ".join(result.limitations)
+        )
+
+    def _report_difference_error(self, exc: Exception) -> None:
+        self.status_event.emit(
+            {
+                "level": "error",
+                "key": "ftir.difference_failed",
+                "params": {
+                    "error": str(exc),
+                    "code": getattr(exc, "code", "") or "",
+                },
+            }
+        )
+
+    # --------------------------------------------------------------- export
+    def _export_format_value(self, combo: QComboBox) -> str:
+        return str(combo.currentData() or "csv")
+
+    def _export_source_value(self) -> str:
+        return str(self.export_source_combo.currentData() or "raw")
+
+    def _peak_result_for(
+        self,
+        dataset_id: str,
+        source: str,
+    ) -> PeakDetectionResult | None:
+        result = self._peak_preview_result or self._peak_applied_result
+        if (
+            result is None
+            or result.dataset_id != dataset_id
+            or result.source != source
+        ):
+            return None
+        return result
+
+    def _default_export_name(self, stem: str, suffix: str, export_format: str) -> str:
+        return f"{stem}_{suffix}.{export_format}"
+
+    def _ensure_export_suffix(self, path: Path, export_format: str) -> Path:
+        expected = f".{export_format}"
+        if path.suffix.casefold() == expected:
+            return path
+        return path.with_name(path.name + expected)
+
+    def _current_export_source(self):
+        if self._source is None:
+            raise ExportSerializationError(
+                self._t("ftir.export_no_spectrum"),
+                code="ftir_export_no_spectrum",
+            )
+        selection = self._export_source_value()
+        if selection == "raw":
+            return selection, self._source
+        if self._session is None:
+            raise ExportSerializationError(
+                self._t("ftir.export_no_spectrum"),
+                code="ftir_export_no_spectrum",
+            )
+        return selection, self._session.current
+
+    def export_current_spectrum(
+        self,
+        output_path: str | Path,
+        *,
+        export_format: str | None = None,
+        source: str | None = None,
+        overwrite: bool | None = None,
+    ) -> list[Path]:
+        """Export the selected raw/processed spectrum; return written paths."""
+        if self._source is None:
+            raise ExportSerializationError(
+                self._t("ftir.export_no_spectrum"),
+                code="ftir_export_no_spectrum",
+            )
+        selection = source or self._export_source_value()
+        if selection not in ("raw", "processed"):
+            raise ExportSerializationError(
+                "Export source must be 'raw' or 'processed'.",
+                code="ftir_export_invalid_source",
+            )
+        if selection == "processed":
+            if self._session is None:
+                raise ExportSerializationError(
+                    self._t("ftir.export_no_spectrum"),
+                    code="ftir_export_no_spectrum",
+                )
+            export_source = self._session.current
+        else:
+            export_source = self._source
+        fmt = export_format or self._export_format_value(self.export_format_combo)
+        overwrite_value = (
+            self.export_overwrite_check.isChecked()
+            if overwrite is None
+            else bool(overwrite)
+        )
+        peak_result = self._peak_result_for(
+            self._source.dataset_id,
+            selection,
+        )
+        target = self._ensure_export_suffix(Path(output_path), fmt)
+        if fmt == "csv":
+            outputs = export_ftir_spectrum_csv(
+                export_source,
+                target,
+                overwrite=overwrite_value,
+                peak_result=peak_result,
+            )
+            return [outputs["csv"], outputs["metadata"]]
+        if fmt == "json":
+            return [
+                export_ftir_spectrum_json(
+                    export_source,
+                    target,
+                    overwrite=overwrite_value,
+                    peak_result=peak_result,
+                )
+            ]
+        if fmt == "png":
+            return [
+                export_ftir_spectrum_png(
+                    export_source,
+                    target,
+                    overwrite=overwrite_value,
+                )
+            ]
+        raise ExportSerializationError(
+            f"Unsupported export format: {fmt!r}",
+            code="ftir_export_invalid_format",
+        )
+
+    def _choose_export_path(
+        self,
+        default_name: str,
+        export_format: str,
+        *,
+        title_key: str,
+    ) -> Path | None:
+        filename, _selected = QFileDialog.getSaveFileName(
+            self,
+            self._t(title_key),
+            str(Path.cwd() / default_name),
+            _EXPORT_FORMAT_FILTERS[export_format],
+        )
+        if not filename:
+            return None
+        return self._ensure_export_suffix(Path(filename), export_format)
+
+    def _export_spectrum(self) -> None:
+        if self._source is None:
+            self.status_event.emit(
+                {"level": "error", "key": "ftir.export_no_spectrum"}
+            )
+            return
+        fmt = self._export_format_value(self.export_format_combo)
+        selection = self._export_source_value()
+        stem = self._path.stem if self._path is not None else self._source.dataset_id
+        target = self._choose_export_path(
+            self._default_export_name(stem, selection, fmt),
+            fmt,
+            title_key="ftir.export_dialog_title",
+        )
+        if target is None:
+            self.status_event.emit(
+                {"level": "info", "key": "ftir.export_cancelled"}
+            )
+            return
+        try:
+            paths = self.export_current_spectrum(
+                target,
+                export_format=fmt,
+                source=selection,
+            )
+        except Exception as exc:
+            self._report_export_error(exc, label=self.export_status_label)
+            return
+        joined = "; ".join(str(path) for path in paths)
+        self.export_status_label.setText(
+            self._t("ftir.export_completed", paths=joined)
+        )
+        self.status_event.emit(
+            {
+                "level": "success",
+                "key": "ftir.export_completed",
+                "params": {"paths": joined},
+            }
+        )
+
+    def _difference_export_result(self) -> DifferenceResult:
+        result = self._difference_preview_result or self._difference_applied_result
+        if result is None:
+            raise ExportSerializationError(
+                self._t("ftir.difference_export_required"),
+                code="ftir_difference_export_required",
+            )
+        return result
+
+    def _difference_export_sources(self, result: DifferenceResult):
+        keys = (
+            self._difference_preview_workspaces
+            if result is self._difference_preview_result
+            else self._difference_applied_workspaces
+        )
+        if keys is None:
+            raise ExportSerializationError(
+                "Difference source workspaces are unavailable.",
+                code="ftir_difference_export_sources",
+            )
+        workspace_a = self._workspace_by_key(keys[0])
+        workspace_b = self._workspace_by_key(keys[1])
+        if workspace_a is None or workspace_b is None:
+            raise ExportSerializationError(
+                "Difference source workspaces are no longer available.",
+                code="ftir_difference_export_sources",
+            )
+        processed_a = (
+            workspace_a.session.current
+            if result.source_a == "processed"
+            else None
+        )
+        processed_b = (
+            workspace_b.session.current
+            if result.source_b == "processed"
+            else None
+        )
+        return workspace_a, workspace_b, processed_a, processed_b
+
+    def export_saved_difference(
+        self,
+        output_path: str | Path,
+        *,
+        export_format: str | None = None,
+        overwrite: bool | None = None,
+    ) -> list[Path]:
+        """Export the current preview/applied difference result."""
+        result = self._difference_export_result()
+        workspace_a, workspace_b, processed_a, processed_b = (
+            self._difference_export_sources(result)
+        )
+        fmt = (
+            export_format
+            or self._export_format_value(self.difference_export_format_combo)
+        )
+        overwrite_value = (
+            self.difference_export_overwrite_check.isChecked()
+            if overwrite is None
+            else bool(overwrite)
+        )
+        target = self._ensure_export_suffix(Path(output_path), fmt)
+        role = "preview" if result is self._difference_preview_result else "applied"
+        peak_a = self._peak_result_for(
+            workspace_a.spectrum.dataset_id,
+            result.source_a,
+        )
+        peak_b = self._peak_result_for(
+            workspace_b.spectrum.dataset_id,
+            result.source_b,
+        )
+        common = {
+            "source_a": workspace_a.spectrum,
+            "source_b": workspace_b.spectrum,
+            "processed_a": processed_a,
+            "processed_b": processed_b,
+            "peak_result_a": peak_a,
+            "peak_result_b": peak_b,
+            "overwrite": overwrite_value,
+            "result_role": role,
+        }
+        if fmt == "csv":
+            outputs = export_ftir_difference_csv(result, target, **common)
+            return [outputs["csv"], outputs["metadata"]]
+        if fmt == "json":
+            return [export_ftir_difference_json(result, target, **common)]
+        if fmt == "png":
+            labels = {
+                "title": self._t("ftir.difference_plot_title"),
+                "a": self._t(
+                    "ftir.difference_plot_a",
+                    name=workspace_a.path.name,
+                ),
+                "b": self._t(
+                    "ftir.difference_plot_b",
+                    name=workspace_b.path.name,
+                ),
+                "b_interpolated": self._t(
+                    "ftir.difference_plot_b_interpolated"
+                ),
+                "difference": self._t(
+                    "ftir.difference_plot_difference"
+                ),
+            }
+            return [
+                export_ftir_difference_png(
+                    result,
+                    target,
+                    source_a=workspace_a.spectrum,
+                    source_b=workspace_b.spectrum,
+                    processed_b=processed_b,
+                    overwrite=overwrite_value,
+                    labels=labels,
+                )
+            ]
+        raise ExportSerializationError(
+            f"Unsupported export format: {fmt!r}",
+            code="ftir_export_invalid_format",
+        )
+
+    def _export_difference(self) -> None:
+        try:
+            result = self._difference_export_result()
+            workspace_a, workspace_b, _processed_a, _processed_b = (
+                self._difference_export_sources(result)
+            )
+        except Exception as exc:
+            self._report_export_error(
+                exc,
+                label=self.difference_export_status_label,
+            )
+            return
+        fmt = self._export_format_value(
+            self.difference_export_format_combo
+        )
+        target = self._choose_export_path(
+            (
+                f"{workspace_a.path.stem}_{workspace_b.path.stem}"
+                f"_difference.{fmt}"
+            ),
+            fmt,
+            title_key="ftir.difference_export_dialog_title",
+        )
+        if target is None:
+            self.status_event.emit(
+                {"level": "info", "key": "ftir.export_cancelled"}
+            )
+            return
+        try:
+            paths = self.export_saved_difference(
+                target,
+                export_format=fmt,
+            )
+        except Exception as exc:
+            self._report_export_error(
+                exc,
+                label=self.difference_export_status_label,
+            )
+            return
+        joined = "; ".join(str(path) for path in paths)
+        self.difference_export_status_label.setText(
+            self._t("ftir.export_completed", paths=joined)
+        )
+        self.status_event.emit(
+            {
+                "level": "success",
+                "key": "ftir.export_completed",
+                "params": {"paths": joined},
+            }
+        )
+
+    def _report_export_error(
+        self,
+        exc: Exception,
+        *,
+        label: QLabel,
+    ) -> None:
+        code = getattr(exc, "code", "") or ""
+        message = str(exc)
+        label.setText(
+            self._t("ftir.export_failed", code=code, error=message)
+        )
+        self.status_event.emit(
+            {
+                "level": "error",
+                "key": "ftir.export_failed",
+                "params": {"code": code, "error": message},
+            }
+        )
+
+    def _update_export_controls(self) -> None:
+        has_source = self._source is not None
+        self.export_source_combo.setEnabled(has_source)
+        self.export_format_combo.setEnabled(has_source)
+        self.export_overwrite_check.setEnabled(has_source)
+        self.export_button.setEnabled(has_source)
+        has_difference = self.difference_result is not None
+        self.difference_export_format_combo.setEnabled(has_difference)
+        self.difference_export_overwrite_check.setEnabled(has_difference)
+        self.difference_export_button.setEnabled(has_difference)
+
     # ---------------------------------------------------------------- access
     def current_display(self):
         return self._display
+
+    @property
+    def difference_result(self) -> DifferenceResult | None:
+        return (
+            self._difference_preview_result
+            or self._difference_applied_result
+        )
+
+    @property
+    def difference_preview_result(self) -> DifferenceResult | None:
+        return self._difference_preview_result
+
+    @property
+    def difference_applied_result(self) -> DifferenceResult | None:
+        return self._difference_applied_result
+
+    @property
+    def loaded_dataset_ids(self) -> tuple[str, ...]:
+        return tuple(
+            workspace.spectrum.dataset_id for workspace in self._workspaces
+        )
 
     @property
     def processing_session(self) -> ProcessingSession | None:

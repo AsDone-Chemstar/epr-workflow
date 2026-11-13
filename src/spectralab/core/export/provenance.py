@@ -88,6 +88,16 @@ def _json_compatible(value: Any, *, path: str) -> Any:
     )
 
 
+def json_compatible(value: Any, *, path: str = "document") -> Any:
+    """Convert values to strict JSON types without silent coercion.
+
+    This is the public wrapper around the same conversion used by the generic
+    export documents. It rejects non-finite floats, binary values and
+    non-string mapping keys.
+    """
+    return _json_compatible(value, path=path)
+
+
 def build_provenance_document(spectrum: Spectrum1D) -> dict[str, Any]:
     """Build the technique-independent provenance object for one spectrum."""
     provenance = spectrum.provenance
@@ -258,4 +268,5 @@ __all__ = [
     "SCHEMA_STATUS",
     "build_metadata_document",
     "build_provenance_document",
+    "json_compatible",
 ]

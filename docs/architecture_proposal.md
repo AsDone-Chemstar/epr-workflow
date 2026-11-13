@@ -1,6 +1,6 @@
 # SpectraLab 架构提案
 
-- 状态：**架构方向已批准；M0–M13 已完成；M14 尚未开始**
+- 状态：**架构方向已批准；M0–M15 已完成；M16 尚未开始**
 - 基线：EPR Workflow **v0.2.0**，提交 `327d5f6`
 - 日期：2026-11-02
 - 范围：评估现有 EPR Workflow，提出可复用的科学光谱平台架构，并规划 FTIR 作为第二个技术模块
@@ -2150,6 +2150,16 @@ M4、M10。
 
 禁用 FTIR 差谱注册；源谱和处理路径不变。
 
+**M14 结果**
+
+已完成显式 ``A - B`` 差谱、精确轴比较、显式线性插值、兼容性验证、独立结果
+模型、FTIR 差谱 GUI、预览/应用/清除、来源与处理历史记录，以及 35 个新增测试。
+完整测试 724 passed / 1 skipped，原始 EPR 回归 298 passed / 1 skipped，架构
+20 passed。实现偏差：差谱依赖两个数据集，未放入单源 ``ProcessingSession`` 或
+``core/processing/operations``，而是作为 FTIR technique 层的独立分析结果
+（与 M13 峰检测同一模式）。详见
+[m14_ftir_difference_spectrum_report.md](m14_ftir_difference_spectrum_report.md)。
+
 ### M15 — FTIR v1.0 导出、来源、双语与端到端加固
 
 **目标**
@@ -2186,6 +2196,17 @@ M9–M14。
 **回滚策略**
 
 FTIR 技术模块从应用注册表移除；EPR 和旧入口保持原状。
+
+**M15 结果**
+
+已完成单谱 CSV/JSON/PNG 导出、差谱专用 CSV/JSON/PNG 导出、完整 provenance、
+FTIR GUI Export 标签页、差谱导出控件、zh/en 文案、默认覆盖保护和批量每文件
+mapping/parsing 记录；新增 26 个测试。完整测试 750 passed / 1 skipped，原始
+EPR 回归 298 passed / 1 skipped，架构 20 passed。实现偏差：PNG 渲染放在
+``spectralab.app.ftir_export``（app 层），因为架构约束禁止 ``techniques/``
+导入 Matplotlib；M14 的 ``DifferenceResult`` 增加只读 aligned A/B 信号以支持
+CSV 的 ``x, a, b, difference`` 列。详见
+[m15_ftir_v1_report.md](m15_ftir_v1_report.md)。
 
 ### M16 — FTIR 多谱比较（v1.0 之后，可选）
 

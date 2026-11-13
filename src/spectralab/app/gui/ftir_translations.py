@@ -122,6 +122,67 @@ FTIR_TRANSLATIONS = {
         "ftir.peak_prominence_header": "显著度（{unit}）",
         "ftir.peak_width_samples_header": "宽度（采样点）",
         "ftir.peak_width_x_header": "宽度（{unit}）",
+        "ftir.dataset_selector": "当前光谱",
+        "ftir.dataset_item": "{name}（{dataset_id}）",
+        "ftir.dataset_switched": "已切换到 {name}。",
+        "ftir.tab_difference": "差谱",
+        "ftir.difference_a": "光谱 A",
+        "ftir.difference_b": "光谱 B",
+        "ftir.difference_source_a": "A 来源",
+        "ftir.difference_source_b": "B 来源",
+        "ftir.difference_axis_match": "X 轴匹配",
+        "ftir.difference_exact": "精确匹配",
+        "ftir.difference_interpolate": "线性插值",
+        "ftir.difference_target_note": (
+            "插值模式以 A 在共同重叠区内的 X 点为目标轴，将 B 线性插值到该轴；"
+            "不外推、不排序、不反转源数据。"
+        ),
+        "ftir.difference_preview": "预览差谱",
+        "ftir.difference_apply": "应用/保存结果",
+        "ftir.difference_clear": "清除结果",
+        "ftir.difference_no_result": "尚无差谱结果。",
+        "ftir.difference_preview_summary": (
+            "差谱预览：A={a}，B={b}；{axis_match}；{points} 个点；尚未保存。"
+        ),
+        "ftir.difference_applied_summary": (
+            "已保存差谱：A={a}，B={b}；{axis_match}；{points} 个点。"
+        ),
+        "ftir.difference_parameter_summary": (
+            "运算：A − B；A 来源={source_a}；B 来源={source_b}；X 轴匹配={axis_match}"
+        ),
+        "ftir.difference_warnings": "警告：{warnings}",
+        "ftir.difference_preview_ready": (
+            "差谱预览已生成：{axis_match}，{points} 个点。"
+        ),
+        "ftir.difference_applied": (
+            "已保存差谱结果：{axis_match}，{points} 个点。"
+        ),
+        "ftir.difference_cleared": "已清除差谱结果。",
+        "ftir.difference_preview_cancelled": "差谱参数已更改，旧预览已失效。",
+        "ftir.difference_preview_required": "请先生成差谱预览。",
+        "ftir.difference_failed": "差谱计算失败 [{code}]：{error}",
+        "ftir.difference_select_spectra": "请显式选择光谱 A 和光谱 B。",
+        "ftir.difference_plot_title": "差谱（A − B）",
+        "ftir.difference_plot_a": "A：{name}",
+        "ftir.difference_plot_b": "B：{name}",
+        "ftir.difference_plot_b_interpolated": "B（线性插值到 A 轴）",
+        "ftir.difference_plot_difference": "A − B",
+        "ftir.tab_export": "导出",
+        "ftir.export_source": "导出数据",
+        "ftir.export_format": "导出格式",
+        "ftir.export_format_csv": "CSV（X/Y 数据 + 元数据）",
+        "ftir.export_format_json": "JSON（数据 + 来源）",
+        "ftir.export_format_png": "PNG（谱图）",
+        "ftir.export_overwrite": "允许覆盖已有文件",
+        "ftir.export_spectrum_button": "导出当前光谱…",
+        "ftir.export_dialog_title": "导出 FTIR 光谱",
+        "ftir.export_no_spectrum": "尚未加载光谱。",
+        "ftir.export_completed": "已导出：{paths}",
+        "ftir.export_failed": "导出失败 [{code}]：{error}",
+        "ftir.export_cancelled": "已取消导出。",
+        "ftir.difference_export_button": "导出差谱…",
+        "ftir.difference_export_dialog_title": "导出 FTIR 差谱",
+        "ftir.difference_export_required": "请先生成或保存差谱结果。",
         "ftir.processing_group": "显式处理",
         "ftir.operation": "处理操作",
         "ftir.operation_normalization": "归一化",
@@ -310,6 +371,77 @@ FTIR_TRANSLATIONS = {
         "ftir.peak_prominence_header": "Prominence ({unit})",
         "ftir.peak_width_samples_header": "Width (samples)",
         "ftir.peak_width_x_header": "Width ({unit})",
+        "ftir.dataset_selector": "Current spectrum",
+        "ftir.dataset_item": "{name} ({dataset_id})",
+        "ftir.dataset_switched": "Switched to {name}.",
+        "ftir.tab_difference": "Difference",
+        "ftir.difference_a": "Spectrum A",
+        "ftir.difference_b": "Spectrum B",
+        "ftir.difference_source_a": "A source",
+        "ftir.difference_source_b": "B source",
+        "ftir.difference_axis_match": "X-axis matching",
+        "ftir.difference_exact": "Exact match",
+        "ftir.difference_interpolate": "Linear interpolation",
+        "ftir.difference_target_note": (
+            "Interpolation uses Spectrum A's X points inside the common "
+            "overlap as the target axis and linearly interpolates Spectrum B "
+            "onto it; no extrapolation, sorting or reversal of source data."
+        ),
+        "ftir.difference_preview": "Preview difference",
+        "ftir.difference_apply": "Apply/Save result",
+        "ftir.difference_clear": "Clear result",
+        "ftir.difference_no_result": "No difference result.",
+        "ftir.difference_preview_summary": (
+            "Difference preview: A={a}, B={b}; {axis_match}; {points} points; "
+            "not saved yet."
+        ),
+        "ftir.difference_applied_summary": (
+            "Saved difference: A={a}, B={b}; {axis_match}; {points} points."
+        ),
+        "ftir.difference_parameter_summary": (
+            "Operation: A - B; A source={source_a}; B source={source_b}; "
+            "X-axis matching={axis_match}"
+        ),
+        "ftir.difference_warnings": "Warnings: {warnings}",
+        "ftir.difference_preview_ready": (
+            "Difference preview generated: {axis_match}, {points} points."
+        ),
+        "ftir.difference_applied": (
+            "Difference result saved: {axis_match}, {points} points."
+        ),
+        "ftir.difference_cleared": "Difference result cleared.",
+        "ftir.difference_preview_cancelled": (
+            "Difference parameters changed; the previous preview was "
+            "invalidated."
+        ),
+        "ftir.difference_preview_required": "Generate a difference preview first.",
+        "ftir.difference_failed": "Difference calculation failed [{code}]: {error}",
+        "ftir.difference_select_spectra": (
+            "Select both Spectrum A and Spectrum B explicitly."
+        ),
+        "ftir.difference_plot_title": "Difference spectrum (A - B)",
+        "ftir.difference_plot_a": "A: {name}",
+        "ftir.difference_plot_b": "B: {name}",
+        "ftir.difference_plot_b_interpolated": "B (linear interpolation to A)",
+        "ftir.difference_plot_difference": "A - B",
+        "ftir.tab_export": "Export",
+        "ftir.export_source": "Export data",
+        "ftir.export_format": "Export format",
+        "ftir.export_format_csv": "CSV (X/Y data + metadata)",
+        "ftir.export_format_json": "JSON (data + provenance)",
+        "ftir.export_format_png": "PNG (spectrum plot)",
+        "ftir.export_overwrite": "Allow overwriting existing files",
+        "ftir.export_spectrum_button": "Export current spectrum…",
+        "ftir.export_dialog_title": "Export FTIR spectrum",
+        "ftir.export_no_spectrum": "No spectrum loaded.",
+        "ftir.export_completed": "Exported: {paths}",
+        "ftir.export_failed": "Export failed [{code}]: {error}",
+        "ftir.export_cancelled": "Export cancelled.",
+        "ftir.difference_export_button": "Export difference…",
+        "ftir.difference_export_dialog_title": "Export FTIR difference",
+        "ftir.difference_export_required": (
+            "Generate or save a difference result first."
+        ),
         "ftir.processing_group": "Explicit processing",
         "ftir.operation": "Processing operation",
         "ftir.operation_normalization": "Normalization",
