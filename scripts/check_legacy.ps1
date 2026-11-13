@@ -1,7 +1,7 @@
 param(
-    [ValidateSet("fast", "gui", "arch", "regression", "full", "release")]
+    [ValidateSet("fast", "gui", "regression", "full", "release")]
     [string]$Mode = "full",
-    [string]$Milestone = "m11"
+    [string]$Milestone = "legacy"
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,30 +42,12 @@ function Invoke-Pytest {
     return $code
 }
 
-function Get-GuiTargets {
-    $targets = @(
-        Get-ChildItem (Join-Path $ProjectRoot "tests") -Filter "test_gui_*.py" |
-            Sort-Object Name |
-            ForEach-Object { "tests/$($_.Name)" }
-    )
-    $targets += "tests/test_ftir_gui.py"
-    $targets += "tests/test_m0_gui_baseline.py"
-    return $targets
-}
-
-function Get-FastExclusions {
-    $exclusions = @(
-        "--ignore=tests/test_architecture.py",
-        "--ignore=tests/test_ftir_gui.py",
-        "--ignore=tests/test_m0_gui_baseline.py"
-    )
-    $guiExclusions = @(
-        Get-ChildItem (Join-Path $ProjectRoot "tests") -Filter "test_gui_*.py" |
-            Sort-Object Name |
-            ForEach-Object { "--ignore=tests/$($_.Name)" }
-    )
-    return $exclusions + $guiExclusions
-}
+$GuiTargets = @(
+    Get-ChildItem (Join-Path $ProjectRoot "tests") -Filter "test_gui_*.py" |
+        Sort-Object Name |
+        ForEach-Object { "tests/$($_.Name)" }
+)
+$GuiTargets += "tests/test_m0_gui_baseline.py"
 
 $RegressionTargets = @(
     "tests/test_batch.py",
@@ -86,25 +68,22 @@ $RegressionTargets = @(
 
 switch ($Mode) {
     "fast" {
-        $fastArgs = @("-q") + (Get-FastExclusions)
-        exit (Invoke-Pytest -Label "Fast non-GUI tests" -PytestArgs $fastArgs)
+        $fastArgs = @("-q") + ($GuiTargets | ForEach-Object { "--ignore=$_" })
+        exit (Invoke-Pytest -Label "Fast non-GUI EPR tests" -PytestArgs $fastArgs)
     }
     "gui" {
-        exit (Invoke-Pytest -Label "GUI tests" -PytestArgs (@("-q") + (Get-GuiTargets)))
-    }
-    "arch" {
-        exit (Invoke-Pytest -Label "Architecture tests" -PytestArgs @("-q", "tests/test_architecture.py"))
+        exit (Invoke-Pytest -Label "Legacy EPR GUI tests" -PytestArgs (@("-q") + $GuiTargets))
     }
     "regression" {
         exit (Invoke-Pytest -Label "Original EPR regression" -PytestArgs (@("-q") + $RegressionTargets))
     }
     "full" {
-        exit (Invoke-Pytest -Label "Full test suite" -PytestArgs @("-q"))
+        exit (Invoke-Pytest -Label "Full Legacy EPR test suite" -PytestArgs @("-q"))
     }
     "release" {
         $verboseLog = Join-Path $LogDir "pytest_${Milestone}_${Date}_verbose.txt"
         $warningLog = Join-Path $LogDir "pytest_${Milestone}_${Date}_userwarning.txt"
-        $regressionLog = Join-Path $LogDir "pytest_${Milestone}_${Date}_original.txt"
+        $regressionLog = Join-Path $LogDir "pytest_${Milestone}_${Date}_regression.txt"
 
         $codes = @()
         $codes += Invoke-Pytest -Label "Release: full verbose" -PytestArgs @("-v") -LogPath $verboseLog

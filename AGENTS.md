@@ -1,4 +1,11 @@
-# AGENTS.md — EPR Workflow
+# AGENTS.md — Legacy EPR Workflow
+
+## 0. Status
+
+This repository is the **Legacy EPR Workflow**, a stable EPR-only research
+application. The SpectraLab general spectroscopy platform is a separate project
+at `D:\SpectraLab` and is not part of this repository. Do not add SpectraLab
+code, tests, schemas or platform infrastructure here.
 
 ## 1. Project
 
@@ -31,7 +38,7 @@ If a requested action cannot safely be completed within the project root, explai
 - Windows and PowerShell.
 - Python 3.11.9, 64-bit.
 - Virtual environment: `.venv`.
-- Expected packages: NumPy, SciPy, Matplotlib, Pandas, and Pytest.
+- Expected packages: NumPy, SciPy, Pandas, Matplotlib, PySide6, and Pytest.
 
 Use the project interpreter:
 
@@ -80,6 +87,10 @@ Do not implement pulse EPR or DEER analysis until the actual data format and sci
 Run tests with:
 
 `.\.venv\Scripts\python.exe -m pytest -v`
+
+Release gate:
+
+`.\scripts\check_legacy.ps1 -Mode release -Milestone legacy`
 
 Report actual test results. Never claim a command succeeded unless it was executed successfully.
 
