@@ -2,6 +2,10 @@
 
 [简体中文](README.md) | **English**
 
+> This repository is the **Legacy EPR Workflow** and contains stable EPR research
+> functionality only. The general spectroscopy platform **SpectraLab** is a
+> separate project at `D:\SpectraLab` and is not part of this repository.
+
 A Python analysis workflow for CW-EPR data exported from **Bruker ELEXSYS E580 / Xepr**.
 
 Current version: **0.2.0**. See [CHANGELOG.md](CHANGELOG.md) for release notes and

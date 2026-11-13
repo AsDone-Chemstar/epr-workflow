@@ -38,5 +38,8 @@ data/reference/
 results/
 Test data/
 
+# 用户提供的真实 FTIR 数据（不提交）
+/S-BSAPEG-10.0.dpt
+
 # 运行时生成的个人 GUI 配置
 config/

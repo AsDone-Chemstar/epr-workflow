@@ -2,6 +2,9 @@
 
 **简体中文** | [English](README.en.md)
 
+> 本仓库是 **Legacy EPR Workflow**，仅保留稳定的 EPR 研究功能。
+> 通用光谱平台 **SpectraLab** 是独立项目（`D:\SpectraLab`），不属于本仓库。
+
 用于 **Bruker ELEXSYS E580 / Xepr** 导出的 CW-EPR 数据的 Python 分析工作流。
 
 当前版本：**0.2.0**。版本更新与历史版本说明见 [CHANGELOG.md](CHANGELOG.md)。
